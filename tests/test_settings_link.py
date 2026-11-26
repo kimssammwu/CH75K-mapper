@@ -261,6 +261,16 @@ class NativeTests(unittest.TestCase):
         self.assertEqual(snapshot, self.original[BASE:BASE + PROFILE_PREFIX])
         self.assertFalse(any(command[:2] in {(0x18, 9), (0x09, 0x41)} for command in fake.commands))
 
+    def test_transport_pacing_scales_waits_and_settles_after_save(self):
+        waits = []
+        SettingsLink(FakeUSB(self.original), 8, wait=waits.append).finish_configuration()
+        self.assertEqual(waits, [0.010])
+        fake = FakeUSB(self.original)
+        fake.wait_scale, fake.save_settle = 5, 0.5
+        waits.clear()
+        SettingsLink(fake, 8, wait=waits.append).finish_configuration()
+        self.assertEqual([round(value, 6) for value in waits], [0.05, 0.5])
+
     def test_full_apply_callback_and_readback(self):
         fake = FakeUSB(self.original)
         with (

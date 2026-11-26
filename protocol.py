@@ -20,7 +20,11 @@ class SettingsLink:
             raise ProtocolError("Feature report 7 is missing or has an unsupported length.")
         self.hid = hid
         self.report_size = report_size
-        self.wait = wait
+        # A transport can ask for longer pauses and a settle time after each save.
+        scale = getattr(hid, "wait_scale", 1)
+        self.wait = wait if scale == 1 else (lambda seconds: wait(seconds * scale))
+        self._settle = getattr(hid, "save_settle", 0)
+        self._sleep = wait
 
     def _send(self, opcode, *, address=0, index=0, value=0, last=0, group=0x18):
         packet = bytes((REPORT_ID, group, opcode, index, address & 0xFF,
@@ -43,6 +47,8 @@ class SettingsLink:
         self._send(0x11)
         self.wait(0.010)
         self._send(0x00)
+        if self._settle:
+            self._sleep(self._settle)
 
     def begin_configuration(self, expected_base: int):
         """Enter the vendor's save mode and check the live base when supplied."""
