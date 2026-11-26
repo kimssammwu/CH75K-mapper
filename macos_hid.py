@@ -276,6 +276,12 @@ def _lock_configuration() -> int:
 class Hidraw:
     """Expose the shared HID transport interface over an IOKit device."""
 
+    # With the default pauses, CH75K 30fa:2350 on macOS 26 did not keep written blocks
+    # and the read-back check failed. Five times the pauses plus 0.5 s after each save
+    # wrote and verified all 19 blocks of a three-key macro profile.
+    wait_scale = 5
+    save_settle = 0.5
+
     def __init__(self, device: Device):
         self.device = device
         self._handle = None
