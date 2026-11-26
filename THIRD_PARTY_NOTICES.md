@@ -1,0 +1,5 @@
+# 제3자 고지
+
+3D 모델을 생성하는 `ui/anatomy/`의 네 모듈은 Ryan의 Anatomy 프로젝트에서 가져왔습니다. MIT 라이선스와 저작권 고지는 [ui/anatomy/LICENSE](ui/anatomy/LICENSE)에 있습니다. [Anatomy 업스트림](https://github.com/wheresryan22/anatomy)
+
+실행 패키지는 PyInstaller로 빌드합니다. PyInstaller 부트로더의 배포 예외는 포함된 Python과 라이브러리의 라이선스를 변경하지 않습니다. 빌드가 발견한 Python 런타임 고지는 패키지의 `licenses/python/`에, Debian 계열에서 찾은 공유 라이브러리 고지는 `licenses/linux/`에 포함됩니다. 실행 패키지를 공개 배포하기 전 대상 빌드에 들어간 라이브러리와 고지를 확인합니다. [PyInstaller 라이선스](https://pyinstaller.org/en/stable/license.html) · [Python 라이선스](https://docs.python.org/3/license.html)

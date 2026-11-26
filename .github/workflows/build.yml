@@ -1,0 +1,50 @@
+name: Build CH75K
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            archive: dist/CH75K-Linux-x86_64-portable.tar.gz
+          - os: macos-15
+            archive: dist/CH75K-macOS-arm64.zip
+          - os: macos-15-intel
+            archive: dist/CH75K-macOS-x86_64.zip
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install Linux WebView and virtual display
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-0 xauth xvfb
+      - run: python -m unittest discover -s tests -v
+      - run: python -m pip install -r requirements-build.txt
+      - run: python build.py --output dist --archive
+      - name: Verify and run the packaged archive
+        env:
+          BUILD_ARCHIVE: ${{ matrix.archive }}
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            GDK_BACKEND=x11 xvfb-run -a python tests/package_smoke.py --archive "$BUILD_ARCHIVE"
+          else
+            python tests/package_smoke.py --archive "$BUILD_ARCHIVE"
+          fi
+      - uses: actions/upload-artifact@v7
+        with:
+          path: ${{ matrix.archive }}
+          archive: false
+          if-no-files-found: error

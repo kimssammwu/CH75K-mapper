@@ -1,0 +1,1117 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; base-uri 'none'; form-action 'none'">
+<title>CH75K 키 매핑</title>
+<style>
+  :root {
+    color-scheme: light;
+    --ink:#192137; --muted:#556174; --edge:#e1e6ef; --page:#f5f6fa;
+    --white:#fff; --blue:#365adf; --blue-ink:#2945b5; --blue-soft:#edf2ff;
+    font-family:"Pretendard","Noto Sans KR","Noto Sans CJK KR",system-ui,sans-serif;
+    background:var(--page); color:var(--ink);
+  }
+  *,*::before,*::after { box-sizing:border-box }
+  [hidden] { display:none!important }
+  .sr-only { position:absolute; width:1px; height:1px; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap }
+  :focus-visible { outline:2px solid var(--blue); outline-offset:3px }
+  body,h1,h2,h3,p { margin:0 }
+  body { min-width:290px }
+  button,input,select,textarea { font:inherit }
+  button { cursor:pointer; color:inherit }
+  button:disabled { cursor:default }
+  .icon { width:17px; height:17px; flex:none; fill:none; stroke:currentColor; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round }
+  .layout { width:min(1400px,100%); margin:auto; padding:32px 48px 28px }
+  .mast { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:22px }
+  .brand { display:flex; align-items:center; gap:13px; min-width:0 }
+  .brand-icon { display:grid; place-items:center; width:47px; height:47px; flex:none; border-radius:13px; background:#243152; color:#f4f6ff }
+  .brand-icon .icon { width:26px; height:26px }
+  .brand-name { color:var(--muted); font-size:11px; font-weight:720; margin-bottom:3px }
+  h1 { font-size:29px; line-height:1; letter-spacing:-.045em; font-weight:760 }
+  .file-actions,.footer-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap }
+  .control { display:inline-flex; justify-content:center; align-items:center; gap:7px; min-height:41px; padding:7px 13px; border:1px solid var(--edge); border-radius:9px; background:var(--white); color:var(--ink); font-size:13px; font-weight:690; white-space:nowrap }
+  .control:hover:not(:disabled) { border-color:#c0cbea; background:#f5f7ff }
+  .control.primary { background:var(--blue); border-color:var(--blue); color:#fff; padding-inline:17px }
+  .control.primary:hover:not(:disabled) { background:#2c49c3; border-color:#2c49c3 }
+  .control:disabled { color:#70798b; background:#f4f6fa; border-color:#e8ecf3 }
+  .file-actions .control:not(.export-control) { background:transparent; border-color:transparent }
+  .file-actions .control:hover { background:#fff; border-color:#d7dfef }
+
+  .workspace { display:grid; grid-template-columns:minmax(0,1fr) minmax(300px,354px); align-items:stretch; border:1px solid var(--edge); border-radius:22px; overflow:hidden; background:var(--white); box-shadow:0 16px 40px #24365a09,0 2px 6px #24365a06 }
+  .figure { display:flex; flex-direction:column; min-width:0; margin:0; position:relative; background:radial-gradient(ellipse at 52% 37%,#fff 0%,#f3f6fd 54%,#eaf0fb 100%); border-right:1px solid var(--edge) }
+  .figure[data-device-connected="false"] { background:#fdfdfd }
+  .figure[data-device-connected="false"] #model-views { filter:grayscale(1) }
+  .figure[data-device-connected="false"] .device-parts { opacity:.22 }
+  .figure[data-device-connected="false"] .model-shadow { opacity:.06 }
+  .figure-head { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; padding:17px 21px 0; z-index:1 }
+  .canvas-title { font-size:13px; font-weight:760; letter-spacing:-.025em }
+  .view-switch { display:flex; gap:2px; padding:3px; border-radius:9px; background:#e8edf8 }
+  .view-switch button { padding:5px 11px; min-height:29px; border:0; border-radius:6px; background:none; color:var(--muted); font-size:11px; font-weight:690; white-space:nowrap }
+  .view-switch button:hover { color:var(--blue-ink) }
+  .view-switch button[aria-pressed="true"] { color:var(--blue-ink); background:#fff; box-shadow:0 1px 2px #26346518 }
+  .model-stage { display:grid; align-items:center; flex:1; min-width:0; position:relative; padding:0 12px }
+  #model-views { min-width:0 }
+  #model-views svg[data-view] { display:block; width:100%; height:auto; aspect-ratio:690/455; max-height:clamp(360px,calc(100svh - 300px),540px); margin:auto; overflow:visible }
+  #model-views [data-control] { cursor:pointer; -webkit-tap-highlight-color:transparent }
+  #model-views [data-control]:focus { outline:none }
+  #model-views [data-control] .cap-travel { transition:transform 165ms cubic-bezier(.18,.75,.35,1),filter 165ms ease }
+  #model-views .key-legend { transition:opacity 150ms ease }
+  #model-views .has-custom-action .key-legend { opacity:.05 }
+  #model-views [data-control].is-pressed .cap-travel { transform:translateY(var(--travel,3px)) }
+  #model-views [data-control].is-selected .surface { filter:brightness(1.14) }
+  #model-views [data-control]:hover .surface { filter:brightness(1.22) }
+  #model-views [data-control] .selection-indicator { opacity:0; transition:opacity 150ms ease }
+  #model-views [data-control].is-selected .selection-indicator,
+  #model-views [data-control]:focus-visible .selection-indicator { opacity:1 }
+  #model-views [data-control]:focus-visible .selection-indicator { stroke:#fff; stroke-width:3 }
+  #model-views [data-control="dial"]:focus-visible .selection-indicator { stroke:#2948bf }
+  .parts-disclosure { margin:0 21px 14px }
+  .parts-disclosure summary { width:max-content; max-width:100%; cursor:pointer; padding:6px 9px; color:var(--muted); font-size:12px; font-weight:670; border-radius:7px }
+  .parts-disclosure summary:hover { background:#dce5f8; color:var(--blue-ink) }
+  .parts { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:5px; padding-top:8px }
+  .parts button { min-width:0; display:grid; grid-template-columns:minmax(0,1fr); align-content:start; gap:2px; border:1px solid #dce4f4; border-radius:8px; background:#ffffffa8; padding:7px 8px; text-align:left }
+  .parts button:hover { border-color:#a7b9fa }
+  .parts button[aria-pressed="true"] { border-color:#a7b9fa; background:#e4ecff; color:var(--blue-ink) }
+  .part-name { font-size:11px; font-weight:720; white-space:nowrap }
+  .part-value { color:var(--muted); font-size:10px; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; overflow-wrap:anywhere }
+
+  .sidebar { min-width:0; min-height:0; contain:size; overflow-y:auto; overscroll-behavior-y:contain; scrollbar-gutter:stable }
+  .sidebar:focus-visible { outline-offset:-2px }
+  .editor { padding:25px 24px 24px }
+  .editor-head { margin-bottom:20px }
+  .part-kind { color:var(--muted); font-size:11px; font-weight:680; margin-bottom:5px }
+  h2 { font-size:28px; letter-spacing:-.05em; line-height:1.24; overflow-wrap:anywhere }
+  .field-title { display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:12px; font-weight:750; margin-bottom:7px }
+  .clear { padding:2px 0 2px 6px; border:0; background:none; color:var(--muted); font-size:11px; text-underline-offset:3px }
+  .clear:hover:not(:disabled) { color:var(--blue-ink); text-decoration:underline }
+  .clear:disabled { visibility:hidden }
+  .field-control { display:block; color:var(--ink); background:#fafbfe; min-height:44px; width:100%; padding:9px 10px; border:1px solid #d8e0ef; border-radius:9px; font-size:14px; line-height:1.3 }
+  .field-control:focus-visible { border-color:var(--blue); outline-offset:1px }
+  #key-input,#macro-input { font-family:ui-monospace,SFMono-Regular,monospace }
+  #macro-input { min-height:77px; resize:vertical }
+  .field-control::placeholder { color:#68748a; opacity:1 }
+  .action-types { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:3px; padding:3px; margin-bottom:17px; border-radius:9px; background:#f0f3fa }
+  .action-types button { padding:6px 3px; min-height:34px; border:0; border-radius:7px; background:transparent; color:var(--muted); font-size:11px; font-weight:720; white-space:nowrap }
+  .action-types button:hover { color:var(--blue-ink) }
+  .action-types button[aria-pressed="true"] { background:#fff; color:var(--blue-ink); box-shadow:0 1px 3px #2432571a }
+  .macro-settings { display:grid; grid-template-columns:minmax(0,1fr) 76px; gap:8px; margin-top:13px }
+  .macro-settings:has(#repeat-count-field[hidden]) { grid-template-columns:minmax(0,1fr) }
+  .small-label { display:block; font-size:11px; font-weight:710; margin-bottom:5px }
+  .compact-field { min-height:37px; padding:6px 8px; font-size:12px }
+  .field-control[aria-invalid="true"] { border-color:#b74829 }
+  .mouse-settings { margin-top:13px; border:1px solid var(--edge); border-radius:9px; padding:9px }
+  .mouse-settings summary { color:var(--blue-ink); cursor:pointer; font-size:12px; font-weight:700 }
+  .mouse-settings[open] summary { margin-bottom:9px }
+  .mouse-row { display:flex; gap:6px; align-items:center }
+  .mouse-row select { flex:1; min-width:0 }
+  .mouse-row .control { min-height:37px; padding:4px 10px; font-size:12px }
+  .mouse-values { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px; margin-top:8px }
+  .fixed-description { color:var(--muted); font-size:14px; line-height:1.65 }
+  .hint { color:var(--muted); font-size:11px; line-height:1.62; margin-top:8px; overflow-wrap:anywhere }
+  .presets { display:flex; flex-wrap:wrap; gap:5px; margin-top:11px }
+  .presets button,.preview-key { padding:3px 7px; border:1px solid #dee6f8; border-radius:6px; font:600 11px/1.5 ui-monospace,monospace; background:#f2f5fc }
+  .presets button:hover { border-color:#a7b9fa; color:var(--blue-ink) }
+  .capture-actions { display:flex; flex-wrap:wrap; gap:7px; align-items:center; margin-top:9px }
+  .capture-actions .control,.capture-panel .control { min-height:36px; padding:5px 9px; font-size:12px }
+  .capture-trigger { color:var(--blue-ink) }
+  .capture-trigger[aria-pressed="true"] { background:var(--blue-soft); border-color:#a7b9fa }
+  .delay-step { display:flex; flex-wrap:wrap; align-items:center; gap:5px; min-width:0 }
+  .delay-step input { width:78px }
+  .capture-panel { margin-top:8px; padding:8px; border:1px solid #c6d5ff; border-radius:9px; background:#f4f7ff }
+  .capture-row { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:start; gap:7px }
+  .capture-input { min-width:0; font-family:ui-monospace,SFMono-Regular,monospace }
+  .preview { margin-top:18px; border-top:1px solid var(--edge); padding-top:12px }
+  .preview h3 { font-size:12px; margin-bottom:6px; font-weight:750 }
+  .preview-body { color:var(--muted); font-size:12px; line-height:1.55; overflow-wrap:anywhere }
+  .preview-ring { display:flex; flex-wrap:wrap; align-items:center; gap:4px 6px }
+  .preview-key { display:inline-block; color:var(--ink) }
+  .preview-delay { color:var(--muted); font:600 10px/1.4 ui-monospace,monospace }
+  .preview-mode { flex-basis:100%; margin-top:3px; color:var(--blue-ink); font-size:11px; font-weight:700 }
+
+  .footer,.footer-end,.device,.device-state,.device-picker { display:flex; flex-wrap:wrap; align-items:center; gap:10px }
+  .footer { justify-content:space-between; margin-top:13px; min-height:47px; padding:0 2px }
+  .device-picker { gap:8px }
+  .status-chip { white-space:nowrap; display:inline-flex; align-items:center; gap:6px; padding:5px 8px; background:#e9edf5; border-radius:7px; color:#455475; font-size:11px; font-weight:740 }
+  .status-chip::before { content:""; width:6px; height:6px; border-radius:50%; background:#7990af }
+  .status-chip.connected { background:#e9f7ed; color:#175d3c }
+  .status-chip.connected::before { background:#2f8f60 }
+  .device-note,#profile-count { color:var(--muted); font-size:12px; line-height:1.55 }
+  .device-note:empty { display:none }
+  .device-select { min-height:35px; padding:5px 8px; font-size:12px; width:auto; max-width:100% }
+  .confirm { display:inline-flex; align-items:center; gap:5px; font-size:12px; line-height:1.4 }
+  .confirm input { accent-color:var(--blue); margin:0; flex:none }
+  .message { white-space:pre-line; overflow-wrap:anywhere; margin-top:8px; background:#edf4ff; color:#283e7e; padding:10px 13px; border:1px solid #d5e1fb; border-radius:9px; font-size:12px; line-height:1.55 }
+  .message.error { background:#fff4ef; color:#873e22; border-color:#f0d9d0 }
+  @media(max-width:1080px) {
+    .layout { padding-inline:28px }
+    .workspace { grid-template-columns:minmax(0,1fr) minmax(285px,324px) }
+    .editor { padding-inline:20px }
+  }
+  @media(max-width:770px) {
+    .layout { padding:20px 19px 22px }
+    .workspace { grid-template-columns:minmax(0,1fr) }
+    .figure { border-right:0; border-bottom:1px solid var(--edge) }
+    #model-views svg[data-view] { max-height:405px }
+    .sidebar { contain:none; overflow:visible; overscroll-behavior-y:auto; scrollbar-gutter:auto }
+    .editor { padding:18px 19px 20px }
+    .editor-head { margin-bottom:15px }
+    h2 { font-size:24px }
+    .footer-end { margin-left:auto }
+  }
+  @media(max-width:440px) {
+    .layout { padding:15px 12px 18px }
+    .mast { margin-bottom:15px; gap:6px }
+    .brand { gap:8px }
+    .brand-icon { width:36px; height:36px; border-radius:9px }
+    .brand-icon .icon { width:21px; height:21px }
+    .brand-name { font-size:10px; margin-bottom:2px }
+    h1 { font-size:22px }
+    .file-actions { gap:3px; justify-content:flex-end }
+    .file-actions .control { min-height:34px; padding:5px 7px; font-size:11px; gap:4px }
+    .file-actions .icon { width:12px; height:12px }
+    .workspace { border-radius:15px }
+    .figure-head { padding:11px 11px 0 }
+    .view-switch button { padding:4px 7px; min-height:26px }
+    .model-stage { margin:-3px -5px -5px; padding-inline:4px }
+    #model-views .model-callouts { display:none }
+    .figure-readout.sr-only { position:static; width:auto; height:auto; clip-path:none; white-space:normal; margin:0 12px 5px; color:var(--blue-ink); font-size:12px; font-weight:720; text-align:center; overflow-wrap:anywhere }
+    .parts-disclosure { margin:0 11px 8px }
+    .parts button { display:flex; align-items:flex-start; flex-direction:column; gap:0; padding:6px }
+    .part-value { max-width:100%; text-align:left }
+    .editor { padding:15px 13px 16px }
+    .footer { gap:7px }
+    .footer-actions .control { min-height:36px; padding-inline:9px; font-size:11px }
+  }
+  @media(prefers-reduced-motion:reduce) {
+    *,*::before,*::after { scroll-behavior:auto!important; transition-duration:.001s!important }
+  }
+</style>
+</head>
+<body>
+<svg xmlns="http://www.w3.org/2000/svg" style="position:absolute;width:0;height:0" aria-hidden="true">
+  <symbol id="ui-grid" viewBox="0 0 24 24"><rect x="3" y="5" width="5" height="5" rx="1.1"/><rect x="10" y="5" width="5" height="5" rx="1.1"/><rect x="3" y="12" width="5" height="5" rx="1.1"/><rect x="10" y="12" width="5" height="5" rx="1.1"/><circle cx="19.1" cy="8" r="2.2"/><path d="M18 13h2"/></symbol>
+  <symbol id="ui-folder" viewBox="0 0 20 20"><path d="M2.6 6a1.4 1.4 0 0 1 1.4-1.4h4.2l1.7 2H16A1.4 1.4 0 0 1 17.4 8v6.3A1.7 1.7 0 0 1 15.7 16H4.3a1.7 1.7 0 0 1-1.7-1.7Z"/></symbol>
+  <symbol id="ui-save" viewBox="0 0 20 20"><path d="M10 2.8v8.4m-3.2-3.1L10 11.4l3.2-3.3M3.5 12v3.7c0 .6.5 1.1 1.1 1.1h10.8c.6 0 1.1-.5 1.1-1.1V12"/></symbol>
+  <symbol id="ui-apply" viewBox="0 0 20 20"><path d="m4.2 10 3.8 3.8 7.8-7.6"/></symbol>
+</svg>
+<main class="layout">
+  <header class="mast" aria-label="CH75K">
+    <div class="brand">
+      <div class="brand-icon"><svg class="icon" aria-hidden="true"><use href="#ui-grid"/></svg></div>
+      <div>
+        <p class="brand-name">독립 설정 도구</p>
+        <h1>CH75K</h1>
+      </div>
+    </div>
+    <div class="file-actions">
+      <button class="control" type="button" id="import-button"><svg class="icon" aria-hidden="true"><use href="#ui-folder"/></svg>불러오기</button>
+      <button class="control export-control" type="button" id="export-button"><svg class="icon" aria-hidden="true"><use href="#ui-save"/></svg>프로필 저장</button>
+      <button class="control" type="button" id="quit-button" hidden>종료</button>
+      <input type="file" accept=".json,application/json" id="profile-file" hidden>
+    </div>
+  </header>
+  <div class="workspace">
+    <figure class="figure iso-plate" aria-label="CH75K 키 매핑" data-device-connected="false">
+      <header class="figure-head">
+        <span class="canvas-title">키 매핑</span>
+        <div role="group" class="view-switch" aria-label="키패드 보기">
+          <button type="button" data-show-view="iso" aria-pressed="true">메인</button>
+          <button type="button" data-show-view="top" aria-pressed="false">위</button>
+        </div>
+      </header>
+      <div class="model-stage">
+        <div id="model-views">
+{{CH75K_GEOMETRY}}
+        </div>
+      </div>
+      <figcaption class="figure-readout sr-only" id="figure-readout" data-readout></figcaption>
+      <details class="parts-disclosure">
+        <summary>조작부 목록</summary>
+        <div id="parts" class="parts" aria-label="키패드 조작부"></div>
+      </details>
+    </figure>
+    <aside class="sidebar" aria-label="선택한 위치 설정" tabindex="0">
+      <section class="editor" aria-labelledby="position-name">
+        <div class="editor-head">
+          <p class="part-kind" id="position-kind"></p>
+          <h2 id="position-name"></h2>
+        </div>
+        <div class="editor-body">
+          <div id="action-types" class="action-types" role="group" aria-label="동작 유형">
+            <button type="button" data-action-type="keyboard" aria-pressed="true">키 입력</button>
+            <button type="button" data-action-type="macro" aria-pressed="false">매크로</button>
+            <button type="button" data-action-type="media" aria-pressed="false">미디어</button>
+            <button type="button" data-action-type="system" aria-pressed="false">시스템</button>
+          </div>
+          <div class="field-title" id="field-title">
+            <label for="key-input" id="key-label">키 동작</label>
+            <label for="macro-input" id="macro-label" hidden>매크로 순서</label>
+            <label for="mapped-action" id="mapped-label" hidden>동작</label>
+            <button type="button" class="clear" id="clear-button">입력 지우기</button>
+          </div>
+          <div id="key-fields">
+            <input type="text" id="key-input" class="field-control" aria-describedby="key-help" placeholder="예  Ctrl+C" spellcheck="false" autocomplete="off" maxlength="2048">
+            <div class="capture-actions">
+              <button type="button" class="control capture-trigger" id="capture-key" aria-controls="capture-panel" aria-pressed="false">키 감지</button>
+            </div>
+            <p class="hint" id="key-help">키를 눌러 감지하거나 <code>Ctrl+C</code>처럼 입력하세요.</p>
+            <div class="presets" role="group" aria-label="자주 쓰는 입력">
+              <button type="button" data-preset="Enter">Enter</button><button type="button" data-preset="Ctrl+C">Ctrl+C</button><button type="button" data-preset="Ctrl+V">Ctrl+V</button>
+            </div>
+          </div>
+          <div id="macro-fields" hidden>
+            <textarea id="macro-input" class="field-control" aria-describedby="macro-help" placeholder="예  Ctrl+C, @120, Ctrl+V" spellcheck="false" autocomplete="off" maxlength="2048"></textarea>
+            <div class="capture-actions">
+              <button type="button" class="control capture-trigger" id="capture-macro" aria-controls="capture-panel" aria-pressed="false">다음 키 감지</button>
+              <div class="delay-step">
+                <input type="number" class="field-control compact-field" id="macro-delay" aria-label="대기 시간 (밀리초)" min="0" max="65535" step="1" value="120" required>
+                <button type="button" class="control" id="macro-add-delay">딜레이 추가</button>
+              </div>
+            </div>
+            <p class="hint" id="macro-help"><code>@120</code>은 120ms 대기입니다. <code>Ctrl+C@120</code>처럼 키 뒤에 넣어도 됩니다.</p>
+            <div class="macro-settings">
+              <div><label class="small-label" for="repeat-input">반복 모드</label><select class="field-control compact-field" id="repeat-input">
+                <option value="count">지정 횟수만큼</option>
+                <option value="hold">누르는 동안</option>
+                <option value="toggle">다시 누를 때까지</option>
+              </select></div>
+              <div id="repeat-count-field"><label class="small-label" for="repeat-count">횟수</label><input class="field-control compact-field" id="repeat-count" type="number" inputmode="numeric" required min="1" max="65535" step="1" value="1"></div>
+            </div>
+            <details class="mouse-settings" id="mouse-settings">
+              <summary>마우스 동작 추가</summary>
+              <div class="mouse-row">
+                <select class="field-control compact-field" id="mouse-action" aria-label="마우스 동작">
+                  <option value="MouseLeft">왼쪽 클릭</option><option value="MouseRight">오른쪽 클릭</option><option value="MouseMiddle">가운데 클릭</option>
+                  <option value="MouseMove">상대 이동</option><option value="MouseWheel">휠 스크롤</option>
+                </select>
+                <button type="button" class="control" id="mouse-add">추가</button>
+              </div>
+              <div class="mouse-values" id="mouse-move-fields" hidden>
+                <div><label class="small-label" for="mouse-x">가로 이동</label><input class="field-control compact-field" type="number" id="mouse-x" required min="-32767" max="32767" step="1" value="10"></div>
+                <div><label class="small-label" for="mouse-y">세로 이동</label><input class="field-control compact-field" type="number" id="mouse-y" required min="-32767" max="32767" step="1" value="0"></div>
+              </div>
+              <div class="mouse-values" id="mouse-wheel-field" hidden>
+                <div><label class="small-label" for="mouse-delta">휠 틱</label><input class="field-control compact-field" type="number" id="mouse-delta" required min="-127" max="127" step="1" value="1"></div>
+              </div>
+              <p class="hint" id="mouse-help" hidden></p>
+            </details>
+          </div>
+          <div id="capture-panel" class="capture-panel" hidden>
+            <div class="capture-row">
+              <input id="capture-input" class="field-control compact-field capture-input" type="text" readonly inputmode="none" autocomplete="off" aria-label="키 감지" aria-describedby="capture-note" placeholder="키를 눌러 주세요">
+              <button type="button" class="control" id="capture-cancel">취소</button>
+            </div>
+            <p id="capture-note" class="hint" role="status"></p>
+          </div>
+          <div id="mapped-fields" hidden>
+            <select id="mapped-action" class="field-control"></select>
+          </div>
+          <div id="fixed-fields" hidden><p class="fixed-description" id="fixed-description"></p></div>
+          <div class="preview" id="preview">
+            <h3>입력 미리 보기</h3>
+            <div id="preview-content" class="preview-body"></div>
+          </div>
+        </div>
+      </section>
+    </aside>
+  </div>
+  <footer class="footer">
+    <div class="device" aria-label="USB 장치">
+      <div class="device-state"><span class="status-chip" id="device-status">오프라인</span><p class="device-note" id="device-note"></p></div>
+      <div class="device-picker">
+        <select class="field-control device-select" id="device-select" aria-label="USB 장치 선택" hidden></select>
+        <label class="confirm" id="confirm-control" hidden><input type="checkbox" id="confirm">CH75K 모델 확인</label>
+      </div>
+    </div>
+    <div class="footer-end">
+      <p id="profile-count"></p>
+      <div class="footer-actions" id="hardware-actions" hidden>
+        <button class="control" id="read-button" type="button">장치에서 읽기</button>
+        <button class="control primary" id="apply-button" type="button"><svg class="icon" aria-hidden="true"><use href="#ui-apply"/></svg>장치에 적용</button>
+      </div>
+    </div>
+  </footer>
+  <p id="operation-message" class="message" role="status" aria-live="polite" hidden></p>
+</main>
+<script>
+(async () => {
+  "use strict";
+  const byId = id => document.getElementById(id);
+  const controlNames = {
+    "top-left":"위 왼쪽", "top-center":"위 가운데", "top-right":"위 오른쪽",
+    "bottom-left":"아래 왼쪽", "bottom-center":"아래 가운데", "bottom-right":"아래 오른쪽",
+    "dial":"다이얼", "screen-toggle":"화면 버튼"
+  };
+  const keycaps = {
+    "top-left":"Enter", "top-center":"Boss", "top-right":"전체 선택",
+    "bottom-left":"잘라내기", "bottom-center":"복사", "bottom-right":"붙여넣기"
+  };
+  const keyDefaults = {...keycaps, "top-center":"바탕화면 보기"};
+  const fixedActions = {
+    dial:{label:"볼륨 조절", description:"다이얼을 돌려 연결된 기기의 볼륨을 조절합니다."},
+    "screen-toggle":{label:"HDMI 화면 전환", description:"CH75K의 HDMI 포트로 연결한 화면을 켜거나 끕니다."}
+  };
+  const actionLabels = {
+    media:{
+      "play-pause":"재생 / 일시 정지", "stop":"정지", "previous-track":"이전 곡", "next-track":"다음 곡",
+      "mute":"음소거", "volume-up":"볼륨 높이기", "volume-down":"볼륨 낮추기", "player":"미디어 플레이어",
+      "mail":"메일", "computer":"내 컴퓨터", "calculator":"계산기", "browser":"웹 브라우저",
+      "browser-back":"브라우저 뒤로", "browser-forward":"브라우저 앞으로", "browser-reload":"브라우저 새로 고침",
+      "browser-stop":"브라우저 로딩 중지", "browser-search":"브라우저 검색", "browser-favorites":"브라우저 즐겨찾기"
+    },
+    system:{"power":"시스템 전원 끄기", "sleep":"절전"}
+  };
+  const repeatLabels = {count:"지정 횟수만큼", hold:"누르는 동안", toggle:"다시 누를 때까지"};
+  const mouseLabels = {mouseleft:"왼쪽 클릭", mouseright:"오른쪽 클릭", mousemiddle:"가운데 클릭"};
+  const own = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
+  const isFixed = id => own(fixedActions, id);
+  const buttons = [...document.querySelectorAll("[data-show-view]")];
+  const views = [...document.querySelectorAll("#model-views svg[data-view]")];
+  const model = byId("model-views");
+  const figure = model.closest(".figure");
+  const keyInput = byId("key-input");
+  const macroInput = byId("macro-input");
+  const repeatInput = byId("repeat-input");
+  const repeatCount = byId("repeat-count");
+  const mappedInput = byId("mapped-action");
+  const mouseAction = byId("mouse-action");
+  const types = [...document.querySelectorAll("[data-action-type]")];
+  const parts = byId("parts");
+  const clearButton = byId("clear-button");
+  const confirm = byId("confirm");
+  const deviceSelect = byId("device-select");
+  const nativeBridge = window.webkit?.messageHandlers?.ch75k;
+  const hasBridge = typeof nativeBridge?.postMessage === "function";
+  const pending = new Map();
+  let nextRequest = 0;
+  const isMac = /mac/i.test(navigator.userAgentData?.platform || navigator.platform);
+  const storageKey = "ch75k-visual-profile-v1";
+  let selected = "top-left";
+  let actionType = "keyboard";
+  let busy = false;
+  let closed = false;
+  let scanning = false;
+  let devices = [];
+  let currentMappings = {};
+  let profile = {keys:{}};
+  let storageAvailable;
+  let pressedTimer;
+  let previewTimer;
+  let previewGeneration = 0;
+  let discardedStoredSettings = 0;
+  let draftRevision = 0;
+  const isObject = entry => entry && typeof entry === "object" && !Array.isArray(entry);
+  const validText = value => typeof value === "string" && value.length <= 2048;
+  const typeOf = value => isObject(value) ? value.type : value ? "keyboard" : "";
+
+  function parseKeyAction(action) {
+    if (validText(action)) return action.trim();
+    if (isObject(action)) {
+      const {type, sequence, repeat, count} = action;
+      if (type === "macro" && validText(sequence) && sequence.trim() && typeof repeat === "string" && own(repeatLabels, repeat)
+        && Object.keys(action).every(key => ["type", "sequence", "repeat", "count"].includes(key))) {
+        if (repeat === "count" && Number.isInteger(count) && count >= 1 && count <= Number(repeatCount.max)) {
+          return {type, sequence:sequence.trim(), repeat, count};
+        }
+        if (repeat !== "count" && !own(action, "count")) return {type, sequence:sequence.trim(), repeat};
+      }
+      if (typeof type === "string" && own(actionLabels, type) && typeof action.action === "string" && own(actionLabels[type], action.action)
+        && Object.keys(action).length === 2) return {type, action:action.action};
+    }
+    throw new Error("프로필에 지원하지 않는 키 동작이 있습니다.");
+  }
+
+  function parseProfile(value, onDiscarded = () => {}) {
+    if (!isObject(value) || Object.keys(value).some(group => group !== "keys" && group !== "dial")) {
+      throw new Error("지원하는 키 설정 프로필을 선택하세요.");
+    }
+    const result = {keys:{}};
+    if (own(value, "dial")) {
+      if (!isObject(value.dial)) throw new Error("프로필 항목은 JSON 객체여야 합니다.");
+      onDiscarded(Object.keys(value.dial).length);
+    }
+    const keys = own(value, "keys") ? value.keys : {};
+    if (!isObject(keys)) throw new Error("프로필 항목은 JSON 객체여야 합니다.");
+    for (const [id, action] of Object.entries(keys)) {
+      if (!own(controlNames, id) || isFixed(id)) {
+        throw new Error("프로필에 지원하지 않는 위치나 동작이 있습니다.");
+      }
+      if (isObject(action) && action.type === "application") {
+        onDiscarded(1);
+        continue;
+      }
+      const parsed = parseKeyAction(action);
+      if (parsed) result.keys[id] = parsed;
+    }
+    return result;
+  }
+
+  window.ch75kReply = (id, result) => {
+    const request = pending.get(id);
+    if (!request) return;
+    pending.delete(id);
+    clearTimeout(request.timer);
+    if (!isObject(result)) request.reject(new Error("CH75K 도구의 응답을 처리하지 못했습니다."));
+    else if (result.error) request.reject(new Error(result.error));
+    else request.resolve(result);
+  };
+
+  const layout = document.querySelector(".layout");
+  if (hasBridge) layout.inert = true;
+  try {
+    const stored = hasBridge ? await api("draft-load") : {profile:JSON.parse(localStorage.getItem(storageKey))};
+    if (Number.isSafeInteger(stored.revision) && stored.revision >= 0) draftRevision = stored.revision;
+    storageAvailable = true;
+    if (stored.profile) profile = parseProfile(stored.profile, count => { discardedStoredSettings += count; });
+  } catch {
+    storageAvailable = false;
+  }
+  function storeProfile() {
+    if (hasBridge) {
+      const revision = ++draftRevision;
+      const updateStatus = available => {
+        if (revision !== draftRevision) return;
+        storageAvailable = available;
+        renderFooter();
+      };
+      api("draft", {revision, profile}).then(() => updateStatus(true), () => updateStatus(false));
+      return;
+    }
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(profile));
+      storageAvailable = true;
+    } catch {
+      storageAvailable = false;
+    }
+  }
+  function valueOf(id) { return profile.keys[id] || ""; }
+  function repeatLabel(value) {
+    return value.repeat === "count" ? value.count + "회 실행" : repeatLabels[value.repeat] + " 반복";
+  }
+  function keyActionLabel(value) {
+    if (typeof value === "string") return value;
+    return value.type === "macro" ? "매크로 · " + repeatLabel(value) : actionLabels[value.type][value.action];
+  }
+  function defaultLabel(id) {
+    return `기본 기능 유지(${keyDefaults[id]})`;
+  }
+  function labelOf(id) {
+    if (isFixed(id)) return fixedActions[id].label;
+    const value = valueOf(id);
+    if (value) return keyActionLabel(value);
+    return currentMappings[id] || defaultLabel(id);
+  }
+  function showMessage(text, error = false) {
+    const message = byId("operation-message");
+    message.hidden = !text;
+    message.textContent = text;
+    message.classList.toggle("error", error);
+  }
+
+  const partButtons = new Map();
+  const partOrder = ["top-left", "top-center", "top-right", "bottom-left", "bottom-center", "bottom-right",
+                     "dial", "screen-toggle"];
+  for (const id of partOrder) {
+    const title = controlNames[id];
+    const button = document.createElement("button");
+    button.type = "button";
+    button.dataset.part = id;
+    const name = document.createElement("span");
+    name.className = "part-name";
+    name.textContent = keycaps[id] || title;
+    const action = document.createElement("span");
+    action.className = "part-value";
+    button.append(name, action);
+    button.addEventListener("click", () => selectPart(id, true));
+    parts.append(button);
+    partButtons.set(id, {button, action});
+  }
+
+  const targets = [...model.querySelectorAll("[data-control]")].filter(node => own(controlNames, node.dataset.control));
+  const callouts = [...model.querySelectorAll("[data-action-label]")].filter(node => own(controlNames, node.dataset.actionLabel));
+  function renderSelection() {
+    for (const view of views) view.dataset.selected = selected;
+    for (const target of targets) {
+      const id = target.dataset.control;
+      target.classList.toggle("is-selected", id === selected);
+      target.classList.toggle("has-custom-action", !isFixed(id) && Boolean(valueOf(id)));
+      target.setAttribute("aria-pressed", String(id === selected));
+      target.setAttribute("aria-label", [keycaps[id], controlNames[id], labelOf(id)].filter(Boolean).join(" · "));
+    }
+    for (const [id, entry] of partButtons) {
+      const label = labelOf(id);
+      entry.button.setAttribute("aria-pressed", String(id === selected));
+      entry.action.textContent = label;
+      entry.button.title = label;
+    }
+    for (const callout of callouts) {
+      const id = callout.dataset.actionLabel;
+      const action = labelOf(id);
+      const limit = !isFixed(id) && action === defaultLabel(id) ? 30 : 20;
+      let width = 0;
+      const visible = Array.from(action).filter(char => {
+        width += /[^\u0000-\u007F]/.test(char) ? 2 : 1;
+        return width <= limit;
+      }).join("");
+      callout.textContent = visible === action ? action : visible + "…";
+      const group = callout.closest("[data-callout]");
+      if (group) group.setAttribute("display", id === selected ? "inline" : "none");
+    }
+    byId("figure-readout").textContent = (keycaps[selected] || controlNames[selected]) + " · " + labelOf(selected);
+    clearButton.disabled = !valueOf(selected) && !(actionType === "macro" && macroInput.value.trim());
+    renderFooter();
+    renderPreview();
+  }
+  function selectPart(id, animate = false) {
+    if (!own(controlNames, id)) return;
+    cancelKeyCapture();
+    selected = id;
+    const fixed = isFixed(id);
+    byId("position-name").textContent = keycaps[id] || controlNames[id];
+    byId("position-kind").textContent = fixed ? "고정 기능" : "버튼 · " + controlNames[id];
+    byId("action-types").hidden = fixed;
+    byId("field-title").hidden = fixed;
+    byId("fixed-fields").hidden = !fixed;
+    if (fixed) byId("fixed-description").textContent = fixedActions[id].description;
+    const value = valueOf(id);
+    showKeyType(fixed ? "" : typeOf(value) || "keyboard", value);
+    renderSelection();
+    if (animate) {
+      clearTimeout(pressedTimer);
+      for (const target of targets) target.classList.toggle("is-pressed", target.dataset.control === id);
+      pressedTimer = setTimeout(() => targets.forEach(node => node.classList.remove("is-pressed")), 145);
+    }
+  }
+  function showKeyType(type, value) {
+    actionType = type;
+    const exact = type === typeOf(value);
+    for (const button of types) button.setAttribute("aria-pressed", String(button.dataset.actionType === type));
+    const mapped = own(actionLabels, type);
+    byId("key-fields").hidden = byId("key-label").hidden = type !== "keyboard";
+    byId("macro-fields").hidden = byId("macro-label").hidden = type !== "macro";
+    byId("mapped-fields").hidden = byId("mapped-label").hidden = !mapped;
+    if (type === "keyboard") keyInput.value = exact ? value : "";
+    if (type === "macro") {
+      macroInput.value = exact ? value.sequence : "";
+      repeatInput.value = exact ? value.repeat : "count";
+      repeatCount.value = exact && value.count !== undefined ? value.count : 1;
+      updateRepeatField();
+    }
+    if (mapped) {
+      byId("mapped-label").textContent = type === "media" ? "미디어 동작" : "시스템 동작";
+      mappedInput.replaceChildren(new Option("기존 동작 유지", ""));
+      for (const [id, label] of Object.entries(actionLabels[type])) mappedInput.add(new Option(label, id));
+      mappedInput.value = exact ? value.action : "";
+    }
+  }
+
+  function changeValue(value) {
+    if (isFixed(selected)) return;
+    if (value) profile.keys[selected] = value;
+    else delete profile.keys[selected];
+    storeProfile();
+    renderSelection();
+  }
+  function changeKey(value) {
+    if (value || actionType === typeOf(valueOf(selected))) changeValue(value);
+    else renderSelection();
+  }
+  function invalidRepeat() {
+    return actionType === "macro" && repeatInput.value === "count" && !repeatCount.validity.valid;
+  }
+  function updateRepeatField() {
+    byId("repeat-count-field").hidden = repeatInput.value !== "count";
+    repeatCount.setAttribute("aria-invalid", String(invalidRepeat()));
+  }
+  function changeMacro() {
+    updateRepeatField();
+    const sequence = macroInput.value.trim();
+    if (!sequence) changeKey("");
+    else if (invalidRepeat()) renderSelection();
+    else {
+      const repeat = repeatInput.value;
+      const value = {type:"macro", sequence, repeat};
+      if (repeat === "count") value.count = repeatCount.valueAsNumber;
+      changeValue(value);
+    }
+  }
+  for (const button of types) button.addEventListener("click", () => {
+    const type = button.dataset.actionType;
+    if (type === actionType) return;
+    showKeyType(type, valueOf(selected));
+    renderSelection();
+  });
+  keyInput.addEventListener("input", () => changeKey(keyInput.value.trim()));
+  macroInput.addEventListener("input", changeMacro);
+  repeatInput.addEventListener("change", changeMacro);
+  repeatCount.addEventListener("input", changeMacro);
+  mappedInput.addEventListener("change", () => changeKey(mappedInput.value ? {type:actionType, action:mappedInput.value} : ""));
+  clearButton.addEventListener("click", () => {
+    const field = actionType === "keyboard" ? keyInput : actionType === "macro" ? macroInput : mappedInput;
+    field.value = "";
+    if (field === macroInput) {
+      repeatCount.value = 1;
+      updateRepeatField();
+    }
+    field.focus();
+    changeValue("");
+  });
+  document.querySelectorAll("[data-preset]").forEach(button => button.addEventListener("click", () => {
+    keyInput.value = button.dataset.preset;
+    changeValue(keyInput.value);
+    keyInput.focus();
+  }));
+
+  const capturePanel = byId("capture-panel");
+  const captureInput = byId("capture-input");
+  const captureNote = byId("capture-note");
+  const captureCancel = byId("capture-cancel");
+  const captureKeys = {
+    ControlLeft:"Ctrl", ControlRight:"RCtrl", ShiftLeft:"Shift", ShiftRight:"RShift",
+    AltLeft:isMac ? "Option" : "Alt", AltRight:isMac ? "ROption" : "RAlt",
+    MetaLeft:isMac ? "Cmd" : "Win", MetaRight:isMac ? "RCmd" : "RWin",
+    Enter:"Enter", Backspace:"Backspace", Space:"Space", Minus:"Minus", Equal:"Equal",
+    BracketLeft:"LeftBracket", BracketRight:"RightBracket", Backslash:"Backslash",
+    Semicolon:"Semicolon", Quote:"Apostrophe", Backquote:"Grave", Comma:"Comma",
+    Period:"Period", Slash:"Slash", CapsLock:"CapsLock", PrintScreen:"PrintScreen",
+    ScrollLock:"ScrollLock", Pause:"Pause", Insert:"Insert", Home:"Home", PageUp:"PageUp",
+    Delete:"Delete", End:"End", PageDown:"PageDown", ArrowLeft:"Left", ArrowRight:"Right",
+    ArrowUp:"Up", ArrowDown:"Down", NumLock:"NumLock", ContextMenu:"Menu",
+    NumpadDivide:"KeypadSlash", NumpadMultiply:"KeypadAsterisk", NumpadSubtract:"KeypadMinus",
+    NumpadAdd:"KeypadPlus", NumpadEnter:"KeypadEnter", NumpadDecimal:"KeypadPeriod"
+  };
+  const captureInstructions = "키를 모두 놓으면 등록됩니다. Esc로 취소할 수 있습니다.";
+  const captureOrder = ["Ctrl", "RCtrl", "Shift", "RShift", captureKeys.AltLeft,
+                        captureKeys.AltRight, captureKeys.MetaLeft, captureKeys.MetaRight];
+  const modifierRank = key => {
+    const index = captureOrder.indexOf(key);
+    return index < 0 ? captureOrder.length : index;
+  };
+  let keyCapture = null;
+
+  function captureLabel(code) {
+    if (own(captureKeys, code)) return captureKeys[code];
+    if (/^Key[A-Z]$/.test(code)) return code.slice(3);
+    if (/^Digit[0-9]$/.test(code)) return code.slice(5);
+    if (/^F(?:[1-9]|1[0-9]|2[0-4])$/.test(code)) return code;
+    if (/^Numpad[0-9]$/.test(code)) return "Keypad" + code.slice(6);
+    return "";
+  }
+  function cancelKeyCapture(restoreFocus = false) {
+    if (!keyCapture) return;
+    const {trigger} = keyCapture;
+    keyCapture = null;
+    trigger.setAttribute("aria-pressed", "false");
+    capturePanel.hidden = true;
+    if (restoreFocus) trigger.focus();
+  }
+  function startKeyCapture(trigger, target) {
+    if (keyCapture?.trigger === trigger) {
+      cancelKeyCapture(true);
+      return;
+    }
+    cancelKeyCapture();
+    keyCapture = {trigger, target, held:new Set(), seen:new Set(), invalid:false};
+    trigger.parentElement.after(capturePanel);
+    trigger.setAttribute("aria-pressed", "true");
+    capturePanel.hidden = false;
+    captureInput.value = "";
+    captureNote.textContent = captureInstructions;
+    captureInput.focus();
+  }
+  function captureSequence(state) {
+    return [...state.seen].sort((first, second) => modifierRank(first) - modifierRank(second)).join("+");
+  }
+  byId("capture-key").addEventListener("click", event => startKeyCapture(event.currentTarget, "keyboard"));
+  byId("capture-macro").addEventListener("click", event => startKeyCapture(event.currentTarget, "macro"));
+  captureCancel.addEventListener("click", () => cancelKeyCapture(true));
+  capturePanel.addEventListener("focusout", event => {
+    if (!capturePanel.contains(event.relatedTarget)) cancelKeyCapture();
+  });
+  window.addEventListener("blur", () => cancelKeyCapture());
+  captureInput.addEventListener("keydown", event => {
+    if (!keyCapture || event.code === "Tab" || event.key === "Tab") return;
+    event.preventDefault();
+    if (event.code === "Escape" || event.key === "Escape") {
+      cancelKeyCapture(true);
+      return;
+    }
+    if (event.repeat) return;
+    const name = captureLabel(event.code);
+    keyCapture.held.add(event.code);
+    if (name) keyCapture.seen.add(name);
+    else {
+      keyCapture.invalid = true;
+      captureNote.textContent = "감지할 수 없는 키입니다. 키를 모두 놓고 다시 시도하세요.";
+    }
+    captureInput.value = captureSequence(keyCapture);
+  });
+  captureInput.addEventListener("keyup", event => {
+    if (!keyCapture || !keyCapture.held.delete(event.code)) return;
+    event.preventDefault();
+    if (keyCapture.held.size) return;
+    if (keyCapture.invalid) {
+      keyCapture.invalid = false;
+      keyCapture.seen.clear();
+      captureInput.value = "";
+      captureNote.textContent = captureInstructions;
+      return;
+    }
+    const chord = captureSequence(keyCapture);
+    const target = keyCapture.target;
+    cancelKeyCapture(true);
+    if (target === "keyboard") {
+      keyInput.value = chord;
+      changeKey(chord);
+    } else {
+      appendMacroStep(chord, false);
+    }
+  });
+
+  function appendMacroStep(step, focus = true) {
+    const existing = macroInput.value.trim();
+    const separator = existing ? (existing.endsWith(",") ? " " : ", ") : "";
+    const next = existing + separator + step;
+    if (next.length > macroInput.maxLength) {
+      showMessage("매크로 입력 칸에 동작을 더 추가할 수 없습니다.", true);
+      return;
+    }
+    macroInput.value = next;
+    if (focus) macroInput.focus();
+    macroInput.setSelectionRange(next.length, next.length);
+    changeMacro();
+  }
+  byId("macro-add-delay").addEventListener("click", () => {
+    const delay = byId("macro-delay");
+    if (delay.reportValidity()) appendMacroStep("@" + delay.valueAsNumber, false);
+  });
+
+  function mouseFields() {
+    const move = mouseAction.value === "MouseMove";
+    const wheel = mouseAction.value === "MouseWheel";
+    byId("mouse-move-fields").hidden = !move;
+    byId("mouse-wheel-field").hidden = !wheel;
+    const help = byId("mouse-help");
+    help.hidden = !move && !wheel;
+    help.textContent = move ? "가로 양수는 오른쪽, 세로 양수는 아래입니다." : "양수면 위로, 음수면 아래로 스크롤합니다.";
+  }
+  mouseAction.addEventListener("change", mouseFields);
+  byId("mouse-add").addEventListener("click", () => {
+    let step = mouseAction.value;
+    const args = step === "MouseMove" ? [byId("mouse-x"), byId("mouse-y")]
+      : step === "MouseWheel" ? [byId("mouse-delta")] : [];
+    for (const arg of args) if (!arg.reportValidity()) return;
+    if (args.length && args.every(arg => arg.valueAsNumber === 0)) {
+      byId("mouse-help").textContent = "0이 아닌 값을 입력해 주세요.";
+      args[0].focus();
+      return;
+    }
+    if (args.length) step += "(" + args.map(arg => arg.valueAsNumber).join(" ") + ")";
+    appendMacroStep(step);
+  });
+  model.addEventListener("click", event => {
+    const target = event.target.closest("[data-control]");
+    if (target) selectPart(target.dataset.control, true);
+  });
+  model.addEventListener("keydown", event => {
+    const target = event.target.closest("[data-control]");
+    if (!target || !(event.key === " " || event.key === "Enter") || event.repeat) return;
+    event.preventDefault();
+    selectPart(target.dataset.control, true);
+  });
+  function showView(name) {
+    for (const svg of views) svg.toggleAttribute("hidden", svg.dataset.view !== name);
+    for (const button of buttons) button.setAttribute("aria-pressed", String(button.dataset.showView === name));
+  }
+  buttons.forEach(button => button.addEventListener("click", () => showView(button.dataset.showView)));
+
+  function renderPreview() {
+    const value = valueOf(selected);
+    const content = byId("preview-content");
+    const preview = byId("preview");
+    clearTimeout(previewTimer);
+    const generation = ++previewGeneration;
+    content.className = "preview-body";
+    preview.hidden = isFixed(selected) || (!invalidRepeat() && own(actionLabels, actionType) && typeOf(value) === actionType);
+    if (preview.hidden) return;
+    if (invalidRepeat()) {
+      content.textContent = "반복 횟수는 1~" + repeatCount.max + " 사이의 정수를 입력하세요.";
+      return;
+    }
+    if (!value) {
+      content.textContent = currentMappings[selected]
+        ? "장치에서 확인한 동작 · " + currentMappings[selected]
+        : defaultLabel(selected);
+      return;
+    }
+    if (actionType !== typeOf(value)) {
+      content.textContent = "현재 설정 · " + keyActionLabel(value);
+      return;
+    }
+    const isMacro = actionType === "macro";
+    const sequence = isMacro ? value.sequence : typeof value === "string" ? value : "";
+    if (!sequence) {
+      content.textContent = keyActionLabel(value);
+    } else {
+      content.className = "preview-body preview-ring";
+      content.replaceChildren();
+      const steps = sequence.split(",").map(expression => {
+        const [raw, delay, extra] = expression.split("@").map(part => part.trim());
+        const name = raw.toLowerCase();
+        if (extra !== undefined || (delay !== undefined && (!/^\d{1,5}$/.test(delay) || Number(delay) > 65535))) return null;
+        if (!raw) return delay === undefined ? null : {delay};
+        if (own(mouseLabels, name)) return {label:mouseLabels[name], delay};
+        const move = /^mousemove\s*\(\s*([+-]?\d{1,5})\s+([+-]?\d{1,5})\s*\)$/i.exec(raw);
+        const wheel = /^mousewheel\s*\(\s*([+-]?\d{1,5})\s*\)$/i.exec(raw);
+        if (move && move.slice(1).every(axis => Math.abs(Number(axis)) <= Number(byId("mouse-x").max))) {
+          return {label:"이동 " + move[1] + " / " + move[2], delay};
+        }
+        if (wheel && Math.abs(Number(wheel[1])) <= Number(byId("mouse-delta").max)) return {label:"휠 " + wheel[1], delay};
+        if (name.startsWith("mouse") || /[()]/.test(raw) || raw.split("+").some(key => !key.trim())) return null;
+        return {label:raw, delay};
+      });
+      if (steps.some(step => !step)) {
+        content.textContent = "동작과 대기 시간의 형식을 확인하세요.";
+      } else {
+        steps.forEach(({label, delay}, index) => {
+          if (index !== 0) content.append(document.createTextNode("→"));
+          if (label) {
+            const key = document.createElement("span");
+            key.className = "preview-key";
+            key.textContent = label;
+            content.append(key);
+          }
+          if (delay !== undefined) {
+            const wait = document.createElement("span");
+            wait.className = label ? "preview-delay" : "preview-key";
+            wait.textContent = delay + (label ? " ms" : " ms 대기");
+            content.append(wait);
+          }
+        });
+        if (isMacro) {
+          const mode = document.createElement("span");
+          mode.className = "preview-mode";
+          mode.textContent = repeatLabel(value);
+          content.append(mode);
+        }
+      }
+    }
+    if (hasBridge) {
+      previewTimer = setTimeout(async () => {
+        const id = selected;
+        try {
+          await api("preview", {profile:{keys:{[id]:value}}});
+        } catch (error) {
+          if (previewGeneration !== generation) return;
+          content.className = "preview-body";
+          content.textContent = error.message;
+        }
+      }, 330);
+    }
+  }
+
+  byId("export-button").addEventListener("click", () => {
+    if (invalidRepeat()) {
+      repeatCount.reportValidity();
+      return;
+    }
+    const data = new Blob([JSON.stringify(profile, null, 2) + "\n"], {type:"application/json"});
+    const url = URL.createObjectURL(data);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "CH75K-profile.json";
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    if (!hasBridge) showMessage("CH75K-profile.json을 저장했습니다.");
+  });
+  const inputFile = byId("profile-file");
+  byId("import-button").addEventListener("click", () => inputFile.click());
+  inputFile.addEventListener("change", async () => {
+    const [file] = inputFile.files;
+    if (!file) return;
+    try {
+      if (file.size > 65536) throw new Error("프로필 파일이 너무 큽니다.");
+      let discardedSettings = 0;
+      profile = parseProfile(JSON.parse(await file.text()), count => { discardedSettings += count; });
+      storeProfile();
+      selectPart(selected);
+      const notice = discardedSettings ? " 이전 앱 실행·다이얼 설정 " + discardedSettings + "개를 제외했습니다." : "";
+      showMessage(file.name + " 프로필을 불러왔습니다." + notice);
+    } catch (error) {
+      showMessage("프로필을 불러오지 못했습니다. " + error.message, true);
+    } finally {
+      inputFile.value = "";
+    }
+  });
+
+  function api(endpoint, data = {}) {
+    return new Promise((resolve, reject) => {
+      const id = ++nextRequest;
+      const timer = endpoint === "read" || endpoint === "apply" ? undefined : setTimeout(() => {
+        pending.delete(id);
+        reject(new Error("CH75K 도구의 응답 시간이 초과됐습니다."));
+      }, 10000);
+      pending.set(id, {resolve, reject, timer});
+      try {
+        nativeBridge.postMessage(JSON.stringify({id, endpoint, data}));
+      } catch {
+        pending.delete(id);
+        clearTimeout(timer);
+        reject(new Error("CH75K 도구에 연결할 수 없습니다."));
+      }
+    });
+  }
+  function renderFooter() {
+    const count = Object.keys(profile.keys).length;
+    const profileCount = byId("profile-count");
+    profileCount.textContent = !storageAvailable ? "보관하려면 프로필을 저장하세요." : count ? count + "개 편집됨" : "";
+    profileCount.hidden = !profileCount.textContent;
+    const mayUseDevice = hasBridge && deviceSelect.value && confirm.checked && !busy;
+    byId("read-button").disabled = !mayUseDevice;
+    byId("apply-button").disabled = !mayUseDevice || count === 0 || invalidRepeat();
+    deviceSelect.disabled = busy;
+    confirm.disabled = busy;
+  }
+  function labelHid(code) {
+    if (code >= 0x04 && code <= 0x1d) return String.fromCharCode(65 + code - 0x04);
+    if (code >= 0x1e && code <= 0x27) return "1234567890"[code - 0x1e];
+    if (code >= 0x3a && code <= 0x45) return "F" + (code - 0x39);
+    if (code >= 0x68 && code <= 0x73) return "F" + (code - 0x68 + 13);
+    const named = {
+      0x28:"Enter", 0x29:"Esc", 0x2a:"Backspace", 0x2b:"Tab", 0x2c:"Space",
+      0x4f:"Right", 0x50:"Left", 0x51:"Down", 0x52:"Up",
+      0xe0:"Ctrl", 0xe1:"Shift", 0xe2:captureKeys.AltLeft, 0xe3:captureKeys.MetaLeft
+    };
+    return named[code] || "HID 0x" + code.toString(16).padStart(2,"0").toUpperCase();
+  }
+  function readMappings(result) {
+    const lines = (result.message || "").split("\n");
+    const reported = {};
+    for (const line of lines) {
+      const match = /^([\w-]+)\s{2,}(.+)$/.exec(line);
+      if (match && own(controlNames, match[1]) && !isFixed(match[1])) reported[match[1]] = match[2];
+    }
+    const values = {};
+    for (const [id, raw] of Object.entries(reported)) {
+      const match = /기기 키 코드 0x([\da-f]+)$/i.exec(raw);
+      const labels = Object.values(actionLabels);
+      values[id] = match ? labelHid(parseInt(match[1],16)) : labels.find(group => own(group, raw))?.[raw] || raw;
+    }
+    return values;
+  }
+  function displayDevices(found) {
+    const previous = devices.find(device => device.id === deviceSelect.value);
+    let clearedMappings = false;
+    if (JSON.stringify(devices) !== JSON.stringify(found)) {
+      devices = found;
+      deviceSelect.replaceChildren();
+      if (devices.length > 1) deviceSelect.add(new Option("장치를 선택하세요", ""));
+      for (const item of devices) deviceSelect.add(new Option(item.label, item.id));
+      if (previous && devices.some(item => item.id === previous.id && item.label === previous.label)) {
+        deviceSelect.value = previous.id;
+      } else {
+        confirm.checked = false;
+        clearedMappings = Object.keys(currentMappings).length > 0;
+        currentMappings = {};
+      }
+    }
+    const present = devices.length > 0;
+    figure.dataset.deviceConnected = String(present);
+    deviceSelect.hidden = !present;
+    byId("confirm-control").hidden = !deviceSelect.value;
+    byId("device-status").classList.toggle("connected",present);
+    byId("device-status").textContent = present ? "장치 감지" : "연결 대기";
+    byId("device-note").textContent = present ? "" : "CH75K를 USB-C로 연결하세요.";
+    if (clearedMappings) renderSelection();
+    else renderFooter();
+  }
+  async function refreshDevices() {
+    if (!hasBridge || closed || scanning || busy || document.hidden) return;
+    scanning = true;
+    try {
+      const result = await api("devices");
+      if (!closed) displayDevices(result.devices || []);
+    } catch (error) {
+      if (closed) return;
+      displayDevices([]);
+      byId("device-status").textContent = "연결 끊김";
+      byId("device-note").textContent = error.message;
+    } finally {
+      scanning = false;
+    }
+  }
+  async function operate(command) {
+    if (busy || !deviceSelect.value || !confirm.checked) return;
+    busy = true;
+    renderFooter();
+    showMessage(command === "read" ? "키패드에서 현재 설정을 읽는 중…"
+      : "키패드에 저장하고 다시 읽는 중…");
+    try {
+      const payload = {device:deviceSelect.value, confirmed:true};
+      if (command === "apply") payload.profile = parseProfile(profile);
+      const result = await api(command, payload);
+      if (command === "read") currentMappings = readMappings(result);
+      else {
+        for (const [id, value] of Object.entries(payload.profile.keys)) currentMappings[id] = keyActionLabel(value);
+      }
+      renderSelection();
+      showMessage(result.message || "작업을 마쳤습니다.");
+    } catch (error) {
+      showMessage(error.message, true);
+    } finally {
+      busy = false;
+      renderFooter();
+      refreshDevices();
+    }
+  }
+  deviceSelect.addEventListener("change", () => {
+    confirm.checked = false;
+    currentMappings = {};
+    byId("confirm-control").hidden = !deviceSelect.value;
+    renderSelection();
+  });
+  confirm.addEventListener("change", renderFooter);
+  byId("read-button").addEventListener("click", () => operate("read"));
+  byId("apply-button").addEventListener("click", () => operate("apply"));
+  const quitButton = byId("quit-button");
+  let devicePolling;
+  quitButton.hidden = !hasBridge;
+  quitButton.addEventListener("click", async () => {
+    quitButton.disabled = true;
+    try {
+      const result = await api("quit", {});
+      closed = true;
+      clearInterval(devicePolling);
+      document.removeEventListener("visibilitychange", refreshDevices);
+      displayDevices([]);
+      byId("device-status").textContent = "종료됨";
+      byId("device-note").textContent = "";
+      showMessage(result.message);
+    } catch (error) {
+      quitButton.disabled = false;
+      showMessage(error.message, true);
+    }
+  });
+  byId("hardware-actions").hidden = !hasBridge;
+  byId("device-note").textContent = hasBridge ? "CH75K를 USB-C로 연결하세요." : "프로필을 만들어 저장할 수 있습니다.";
+  if (hasBridge) {
+    byId("device-status").textContent = "연결 대기";
+    refreshDevices();
+    devicePolling = setInterval(refreshDevices, 1600);
+    document.addEventListener("visibilitychange", refreshDevices);
+  }
+  showView("iso");
+  selectPart(selected);
+  layout.inert = false;
+  if (discardedStoredSettings) {
+    storeProfile();
+    showMessage("이전 앱 실행·다이얼 설정 " + discardedStoredSettings + "개를 제외했습니다.");
+  }
+})();
+</script>
+</body>
+</html>
