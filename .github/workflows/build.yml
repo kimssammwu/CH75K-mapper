@@ -20,9 +20,9 @@ jobs:
           - os: ubuntu-22.04
             asset: dist/CH75K-Linux-x86_64
           - os: macos-15
-            asset: dist/CH75K-macOS-arm64.dmg
+            asset: dist/CH75K.app/Contents/MacOS/CH75K
           - os: macos-15-intel
-            asset: dist/CH75K-macOS-x86_64.dmg
+            asset: dist/CH75K.app/Contents/MacOS/CH75K
           - os: windows-2025
             asset: dist/CH75K-Windows-x86_64.exe
     runs-on: ${{ matrix.os }}
@@ -44,7 +44,12 @@ jobs:
         if: runner.os == 'Windows'
         run: python -m pip install -r requirements-windows.txt
       - run: python -m unittest discover -s tests -v
-      - run: python build.py --output dist --standalone
+      - name: Build Windows or Linux standalone
+        if: runner.os != 'macOS'
+        run: python build.py --output dist --standalone
+      - name: Build macOS app from source
+        if: runner.os == 'macOS'
+        run: python build.py --output dist
       - name: Ensure Microsoft WebView2 Runtime for the Windows smoke test
         if: runner.os == 'Windows'
         shell: pwsh
@@ -68,17 +73,20 @@ jobs:
           if ($setup.ExitCode -ne 0) {
             throw "WebView2 Runtime installation failed with exit code $($setup.ExitCode)."
           }
-      - name: Verify and run the standalone build
+      - name: Verify and run the built application
         shell: bash
         env:
           BUILD_ASSET: ${{ matrix.asset }}
         run: |
           if [ "$RUNNER_OS" = "Linux" ]; then
             GDK_BACKEND=x11 xvfb-run -a python tests/package_smoke.py --standalone "$BUILD_ASSET"
+          elif [ "$RUNNER_OS" = "macOS" ]; then
+            python tests/package_smoke.py "$BUILD_ASSET"
           else
             python tests/package_smoke.py --standalone "$BUILD_ASSET"
           fi
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: runner.os != 'macOS'
         with:
           path: ${{ matrix.asset }}
           archive: false
@@ -121,8 +129,6 @@ jobs:
           assets=(
             CH75K-Linux-x86_64
             CH75K-Windows-x86_64.exe
-            CH75K-macOS-arm64.dmg
-            CH75K-macOS-x86_64.dmg
           )
           cmp <(printf '%s\n' "${assets[@]}" | LC_ALL=C sort) \
               <(find . -mindepth 1 -maxdepth 1 -printf '%f\n' | LC_ALL=C sort)
@@ -159,7 +165,7 @@ jobs:
             --repo "$GITHUB_REPOSITORY" --verify-tag --title "CH75K Studio $GITHUB_REF_NAME" --notes-file - <<EOF
           - Linux x86-64는 \`CH75K-Linux-x86_64\`를 내려받아 \`chmod +x CH75K-Linux-x86_64\` 후 실행합니다.
           - Windows x86-64는 \`CH75K-Windows-x86_64.exe\`를 실행합니다.
-          - macOS는 Apple Silicon용 \`CH75K-macOS-arm64.dmg\` 또는 Intel용 \`CH75K-macOS-x86_64.dmg\`를 열고 CH75K 앱을 복사합니다.
+          - macOS는 [Quick Start]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/$GITHUB_REF_NAME/README.md#quick-start)의 순서대로 소스에서 빌드합니다.
 
           [설치 및 사용 안내]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/$GITHUB_REF_NAME/README.md)
 

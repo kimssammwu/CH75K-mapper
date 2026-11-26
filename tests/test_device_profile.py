@@ -23,10 +23,22 @@ class DeviceProfileTests(unittest.TestCase):
             "type": "macro", "sequence": "Ctrl+C", "repeat": "count", "count": 1,
         })
         editor = {"keys": {
-            "top-left": "Return", "top-center": "Control+D", "top-right": "ctrl+a",
+            "top-left": "Return", "top-center": "Super+D", "top-right": "ctrl+a",
             "bottom-left": "lctrl+x", "bottom-center": "ctrl+c@48", "bottom-right": "Ctrl+V",
         }}
         self.assertFalse(compare_profile(BASE, self.image, editor)["differences"])
+
+    def test_explicit_defaults_compare_equal_to_factory_macros(self):
+        editor = {"keys": {button: {"type": "default"} for button in BUTTONS}}
+        self.assertEqual(compare_profile(BASE, self.image, editor)["differences"], [])
+        self.image[BUTTONS["bottom-right"]] = 0x68
+        self.assertEqual(compare_profile(BASE, self.image, editor)["changes"], {
+            "keys": {"bottom-right": {"type": "default"}},
+        })
+
+    def test_default_rejects_additional_fields(self):
+        with self.assertRaisesRegex(ValueError, "bottom-center"):
+            parse_profile({"keys": {"bottom-center": {"type": "default", "action": "F13"}}})
 
     def test_absent_editor_keys_can_be_loaded_without_writing_a_default(self):
         result = compare_profile(BASE, self.image, {"keys": {"top-left": "Escape"}})

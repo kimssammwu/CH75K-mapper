@@ -13,6 +13,11 @@ BUTTONS = {
     "top-left": 0x70, "top-center": 0x78, "top-right": 0x80,
     "bottom-left": 0x62, "bottom-center": 0xE2, "bottom-right": 0xDA,
 }
+# The six user-editable assignments in the manufacturer's default configuration.
+DEFAULT_BINDINGS = {
+    "top-left": "Enter", "top-center": "Win+D", "top-right": "Ctrl+A",
+    "bottom-left": "Ctrl+X", "bottom-center": "Ctrl+C", "bottom-right": "Ctrl+V",
+}
 KEY_MATRIX = 0x48
 KEY_MATRIX_END = 0xE8
 EXTENDED_KEYS_END = 0xF4
@@ -104,7 +109,13 @@ def encode_macro(steps: tuple[Step, ...], count: int = 1) -> tuple[bytes, int]:
     return bytes(body).ljust(_align8(len(body)), b"\x00"), words
 
 
-def _parse_binding(value: str | dict) -> Action | None:
+def _parse_binding(button: str, value: str | dict) -> Action | None:
+    restore_default = isinstance(value, dict) and value.get("type") == "default"
+    if restore_default:
+        if value.keys() != {"type"}:
+            raise ValueError("기본 동작에는 추가 설정을 지정할 수 없습니다.")
+        value = DEFAULT_BINDINGS[button]
+
     if isinstance(value, str):
         steps = parse_action(value)
         if not steps:
@@ -112,7 +123,7 @@ def _parse_binding(value: str | dict) -> Action | None:
         if len(steps) == 1 and len(steps[0].usages) == 1 and "@" not in value:
             return Action(value, steps[0].usages[0])
         body, words = encode_macro(steps)
-        return Action(value, None, body, words, kind="macro")
+        return Action(value, None, body, words, kind="default" if restore_default else "macro")
 
     if not isinstance(value, dict):
         raise ValueError("키 입력 또는 동작 설정이 필요합니다.")
@@ -158,7 +169,7 @@ def parse_profile(profile: dict) -> dict[str, Action]:
     parsed = {}
     for button, value in keys.items():
         try:
-            action = _parse_binding(value)
+            action = _parse_binding(button, value)
             if action is not None:
                 parsed[button] = action
         except ValueError as exc:
@@ -249,6 +260,19 @@ def _macro_end(base: int, data: bytes, slot: Slot) -> int | None:
     return end if end <= base + len(data) else None
 
 
+def _matches_macro_body(action: Action, stored: bytes) -> bool:
+    if stored == action.body:
+        return True
+    if action.kind != "default":
+        return False
+    # Default chords have two press and two release events. The original
+    # slots may release the modifier first and use 0xFF for alignment.
+    presses = action.body[:6]  # Repeat count and both presses.
+    key_up, modifier_up = action.body[6:8], action.body[8:10]
+    return (stored[:10] in (presses + key_up + modifier_up, presses + modifier_up + key_up)
+            and all(byte in (0, 255) for byte in stored[10:]))
+
+
 def plan_changes(base: int, original: bytes, keys: dict[str, Action], *,
                  preserve_slots_for: frozenset[str] = frozenset()) -> list[Change]:
     verify_matrix(original)
@@ -279,7 +303,7 @@ def plan_changes(base: int, original: bytes, keys: dict[str, Action], *,
         matches = next((i for i, slot in enumerate(slots)
                         if slot.words == action.words and slot.flags == action.flags
                         and slot.end - slot.address == len(action.body)
-                        and edited[slot.address - base:slot.address - base + len(action.body)] == action.body),
+                        and _matches_macro_body(action, edited[slot.address - base:slot.end - base])),
                        None)
         if matches is not None:
             slot_id = matches

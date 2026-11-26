@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 from contextlib import redirect_stderr, redirect_stdout, suppress
-from dataclasses import dataclass
 import faulthandler
 from io import BytesIO
 import json
@@ -20,8 +19,8 @@ from tempfile import NamedTemporaryFile, TemporaryDirectory
 from threading import Event, Thread
 import wave
 
-from ch75k import DeviceSnapshot, apply_profile, capture_profile, find_devices, preview_profile, read_profile, state_directory
-from device_profile import compare_profile
+from ch75k import Device, apply_editor_profile, candidates, capture_profile, preview_profile, state_directory
+from device_profile import compare_editor_profiles, compare_profile, decode_profile
 from hid_common import HidrawAccessError, HidrawError
 from protocol import ProtocolError
 from settings import BUTTONS
@@ -119,15 +118,6 @@ def _play_connection_sound():
         pass
 
 
-@dataclass(frozen=True)
-class PendingComparison:
-    token: str
-    snapshot: DeviceSnapshot
-    draft: dict
-    changes: dict
-    preserve_slots_for: frozenset[str]
-
-
 class DesktopBridge:
     """Move WebView commands to a worker and replies back to the UI thread."""
 
@@ -138,8 +128,7 @@ class DesktopBridge:
         self.smoke_passed = False
         self.smoke_error = ""
         self.previewed = False
-        self.device_present = False
-        self.comparison: PendingComparison | None = None
+        self.devices: dict[str, tuple[Device, str]] = {}
         self.commands = Queue(maxsize=128)
         self.replies = SimpleQueue()
         self.stopped = Event()
@@ -196,18 +185,47 @@ class DesktopBridge:
             if endpoint == "quit" or self.smoke_error:
                 self.stopped.set()
 
+    def _refresh_devices(self):
+        devices = {}
+        new_attachment = False
+        for device in candidates():
+            path = str(device.path)
+            previous = self.devices.get(path)
+            if previous is not None and device == previous[0]:
+                devices[path] = (device, previous[1])
+            else:
+                devices[path] = (device, token_urlsafe(18))
+                new_attachment = True
+        self.devices = devices
+        if new_attachment:
+            Thread(target=_play_connection_sound, name="CH75K connection sound", daemon=True).start()
+
+    def _device_inventory(self) -> dict:
+        return {"devices": [
+            {"id": path, "label": f"{device.name} ({device.vid:04x}:{device.pid:04x})", "identity": identity}
+            for path, (device, identity) in self.devices.items()
+        ]}
+
+    def _resume_device(self, device: Device, identity: str, *, request_id: int) -> dict:
+        if self.window_closed.is_set():
+            raise ValueError("창이 닫혀 장치 작업을 취소했습니다.")
+        self.replies.put((request_id, {
+            "progress": "저장된 설정을 읽고 CH75K를 키 입력 모드로 되돌리는 중입니다.",
+        }))
+        snapshot = self._with_device_access(capture_profile, device, request_id=request_id, resume=True)
+        inventory = self._device_inventory()
+        return {
+            **inventory,
+            "device": next(entry for entry in inventory["devices"] if entry["identity"] == identity),
+            **decode_profile(snapshot.base, snapshot.image),
+            "message": "저장된 설정을 다시 읽고 키 입력 모드 복귀 명령을 보냈습니다.",
+        }
+
     def _handle(self, endpoint: str, data: dict, *, request_id: int) -> dict:
         if endpoint == "devices":
-            devices = [] if self.smoke else find_devices()
-            if self.comparison and all(
-                path != str(self.comparison.snapshot.device.path) for path, _ in devices
-            ):
-                self.comparison = None
-            present = bool(devices)
-            if present and not self.device_present:
-                Thread(target=_play_connection_sound, name="CH75K connection sound", daemon=True).start()
-            self.device_present = present
-            return {"devices": [{"id": path, "label": label} for path, label in devices]}
+            if not self.smoke:
+                self._refresh_devices()
+            return self._device_inventory()
         if endpoint == "draft-load":
             return {"profile": _load_draft(self.draft), "revision": self.revision}
         if endpoint == "draft":
@@ -222,6 +240,10 @@ class DesktopBridge:
             result = preview_profile(data.get("profile"))
             self.previewed = True
             return {"message": result}
+        if endpoint == "profile-changes":
+            draft = json.loads(_draft_json(data.get("profile")))
+            baseline = json.loads(_draft_json(data.get("baseline")))
+            return {"changes": compare_editor_profiles(baseline, draft)["changes"]}
         if endpoint == "quit":
             return {"message": "매퍼를 종료했습니다."}
         if self.smoke and endpoint == "smoke-result":
@@ -229,41 +251,23 @@ class DesktopBridge:
             if not self.smoke_passed:
                 self.smoke_error = str(data.get("error") or "매크로 미리 보기 요청을 받지 못했습니다.")
             return {}
-        if not self.smoke and endpoint in ("read", "apply", "compare", "sync-apply"):
-            device = data.get("device")
-            if not isinstance(device, str) or not device or data.get("confirmed") is not True:
-                raise ValueError("장치를 선택하고 CH75K 모델을 확인해 주세요.")
-            if device not in {path for path, _ in find_devices()}:
-                raise ValueError("선택한 장치를 다시 연결해 주세요.")
-            if endpoint == "compare":
-                self.comparison = None
-                draft = json.loads(_draft_json(data.get("profile")))
-                snapshot = self._with_device_access(capture_profile, device, request_id=request_id)
-                result = compare_profile(snapshot.base, snapshot.image, draft)
-                token = token_urlsafe(18)
-                self.comparison = PendingComparison(
-                    token, snapshot, draft, result["changes"], frozenset(result["unsupported"]),
-                )
-                return {**result, "token": token}
-            if endpoint == "sync-apply":
-                comparison = self.comparison
-                draft = json.loads(_draft_json(data.get("profile")))
-                if (comparison is None or comparison.token != data.get("token")
-                        or str(comparison.snapshot.device.path) != device or comparison.draft != draft):
-                    raise ValueError("비교 이후 선택이나 편집값이 바뀌었습니다. 다시 비교해 주세요.")
-                self.comparison = None
-                if not comparison.changes["keys"]:
-                    raise ValueError("장치에 기록할 변경이 없습니다.")
-                result = self._with_device_access(
-                    apply_profile, comparison.snapshot.device, comparison.changes,
-                    request_id=request_id, expected=comparison.snapshot,
-                    preserve_slots_for=comparison.preserve_slots_for,
-                )
-                return {"message": result}
-            operation = read_profile if endpoint == "read" else apply_profile
-            arguments = (data.get("profile"),) if endpoint == "apply" else ()
-            result = self._with_device_access(operation, device, *arguments, request_id=request_id)
-            return {"message": result}
+        if not self.smoke and endpoint in ("compare", "apply", "reload"):
+            path, identity = data.get("device"), data.get("identity")
+            if (not isinstance(path, str) or not isinstance(identity, str)
+                    or data.get("confirmed") is not True):
+                raise ValueError("새 장치 확인 창에서 사용할 CH75K를 확인해 주세요.")
+            self._refresh_devices()
+            attachment = self.devices.get(path)
+            if attachment is None or identity != attachment[1]:
+                raise ValueError("CH75K 연결이 바뀌었습니다. 장치를 새로고침해 주세요.")
+            device = attachment[0]
+            if endpoint == "reload":
+                return self._resume_device(device, identity, request_id=request_id)
+            draft = json.loads(_draft_json(data.get("profile")))
+            if endpoint == "apply":
+                return self._with_device_access(apply_editor_profile, device, draft, request_id=request_id)
+            snapshot = self._with_device_access(capture_profile, device, request_id=request_id)
+            return compare_profile(snapshot.base, snapshot.image, draft)
         raise ValueError("요청한 작업을 찾지 못했습니다.")
 
     def _with_device_access(self, operation, device, *arguments, request_id, **options):

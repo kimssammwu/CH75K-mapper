@@ -36,8 +36,9 @@ def factory_image():
         flash[offset:offset + 5] = bytes((7, words, cursor & 255, cursor >> 8, 0))
         if words:
             key = (0x1B, 0x06, 0x19, 0x07, 0x04)[index]
-            flash[cursor:cursor + 16] = bytes((1, 0, 0x86, 0xE0, 0x86, key,
-                                              6, 0xE0, 6, key)) + bytes(6)
+            modifier = 0xE3 if index == 3 else 0xE0
+            flash[cursor:cursor + 16] = bytes((1, 0, 0x86, modifier, 0x86, key,
+                                              6, modifier, 6, key)) + bytes(6)
             cursor += 16
     return flash
 
@@ -46,6 +47,9 @@ class FakeUSB:
     def __init__(self, source, fail_address=None, metadata_length=16):
         self.flash = bytearray(source)
         self.mode = False
+        self.resume_armed = False
+        self.readback_expected = False
+        self.readback_started = False
         self.commands = []
         self.staged = {}
         self.reply = None
@@ -60,27 +64,42 @@ class FakeUSB:
         self.commands.append((group, op, address, index, value, last))
         if group == 0x09 and op == 0x41:
             self.mode = True
-        elif group == 0x20 and op == 0:
-            self.mode = False
+            self.resume_armed = False
+            self.readback_started = False
         else:
             assert group == 0x18
             if op == 3:
                 self.staged[(address, index)] = value
             elif op == 5:
+                # A readback after a save can leave this device in settings mode.
+                if self.readback_expected:
+                    self.mode = True
+                    self.readback_started = True
                 assert self.staged[(address, index)] == 0
                 self.reply = self.flash[address + index]
             elif op == 9:
                 assert self.mode
+                self.readback_expected = True
                 if self.fail_address == address:
                     self.fail_address = None
                     self.flash[address] = 0x5A
                     raise OSError("simulated partial USB write")
                 self.flash[address:address + last + 1] = bytes(
                     self.staged[(address, i)] for i in range(last + 1))
-            elif op in (1, 17):
+            elif op == 1:
                 self.staged.clear()
+            elif op == 0x11:
+                self.staged.clear()
+                self.resume_armed = True
             else:
                 assert op == 0
+                if self.resume_armed:
+                    assert address == 0
+                    self.resume_armed = False
+                    self.mode = False
+                    if self.readback_started:
+                        self.readback_expected = False
+                        self.readback_started = False
 
     def get_feature(self, report, size):
         assert report == 7 and size == 8 and self.reply is not None
@@ -117,6 +136,11 @@ class NativeTests(unittest.TestCase):
                 self.assertEqual(backup.stat().st_mode & 0o777, 0o600)
             ch75k._write_and_verify(link, BASE, changes, backup)
 
+    def assert_normal_mode(self, fake):
+        self.assertEqual(fake.commands[-2:],
+                         [(0x18, 0x11, 0, 0, 0, 0), (0x18, 0, 0, 0, 0, 0)])
+        self.assertFalse(fake.mode)
+
     def test_golden_keyboard_macro(self):
         payload, count = encode_macro(parse_action("Ctrl+X"))
         self.assertEqual(count, 4)
@@ -139,6 +163,130 @@ class NativeTests(unittest.TestCase):
             self.assertEqual(fake.read_addresses(), [PROFILE_POINTER, *range(BASE, FACTORY_MACRO_END, BLOCK_SIZE)])
             backup.assert_not_called()
             write.assert_not_called()
+
+    def test_editor_apply_leaves_equivalent_factory_shortcut_untouched(self):
+        fake = FakeUSB(self.original)
+        with (
+            patch("ch75k.select_device", return_value=self.device),
+            patch("ch75k.Hidraw", return_value=nullcontext(fake)) as hid,
+            patch("ch75k.SettingsLink", side_effect=lambda h, n: SettingsLink(h, n, lambda _: None)),
+            patch("ch75k._persist_backup") as backup,
+        ):
+            result = ch75k.apply_editor_profile("fake", {"keys": {"bottom-left": "Ctrl+X", "top-left": "Enter"}})
+            self.assertIn("같은 설정이 저장", result["message"])
+            self.assertFalse(result["changed"])
+            self.assertEqual(result["profile"]["keys"]["top-left"], "Enter")
+            self.assertEqual(fake.flash, self.original)
+            self.assertEqual(fake.read_addresses(), [PROFILE_POINTER, *range(BASE, FACTORY_MACRO_END, BLOCK_SIZE)])
+            self.assertFalse(any(command[:2] == (0x09, 0x41) for command in fake.commands))
+            hid.assert_called_once_with(self.device)
+            backup.assert_not_called()
+
+    def test_editor_apply_restores_explicit_defaults_and_skips_omitted_keys(self):
+        fake = FakeUSB(self.original)
+        for name in ("top-left", "top-center", "bottom-center"):
+            fake.flash[BASE + BUTTONS[name]] = 0x68
+        # An unused original slot can keep its exact ordering and padding.
+        boss_slot = BASE + PROFILE_PREFIX + 3 * 16
+        fake.flash[boss_slot + 10:boss_slot + 16] = bytes([0xFF]) * 6
+        original_macro_area = fake.flash[BASE + TABLE:MACRO_END]
+        profile = {"keys": {button: {"type": "default"}
+                            for button in ("top-left", "top-center")}}
+        with (
+            patch("ch75k.select_device", return_value=self.device),
+            patch("ch75k.Hidraw", return_value=nullcontext(fake)),
+            patch("ch75k.SettingsLink", side_effect=lambda h, n: SettingsLink(h, n, lambda _: None)),
+            patch("ch75k._persist_backup", return_value=Path("/fake/backup.json")) as backup,
+        ):
+            result = ch75k.apply_editor_profile("fake", profile)
+            self.assertTrue(result["changed"])
+            self.assertEqual(result["profile"]["keys"]["top-left"], "Enter")
+            self.assertEqual(result["profile"]["keys"]["top-center"]["sequence"], "Win+D")
+            self.assertEqual(result["profile"]["keys"]["bottom-center"], "F13")
+            self.assertEqual(fake.flash[BASE + BUTTONS["top-center"]], MACRO_TRIGGERS[3])
+            self.assertEqual(fake.flash[BASE + TABLE:MACRO_END], original_macro_area)
+            self.assertFalse(ch75k.apply_editor_profile("fake", profile)["changed"])
+            backup.assert_called_once()
+
+    def test_editor_apply_uses_live_bytes_and_preserves_opaque_macro(self):
+        fake = FakeUSB(self.original)
+        first_macro = BASE + PROFILE_PREFIX
+        fake.flash[first_macro + 3] = 0xEF
+        fake.flash[BASE + BUTTONS["top-left"]] = 0x29
+        opaque = fake.flash[first_macro:first_macro + 16]
+        with (
+            patch("ch75k.select_device", return_value=self.device),
+            patch("ch75k.Hidraw", return_value=nullcontext(fake)) as hid,
+            patch("ch75k.SettingsLink", side_effect=lambda h, n: SettingsLink(h, n, lambda _: None)),
+            patch("ch75k._persist_backup", return_value=Path("/fake/backup.json")) as backup,
+        ):
+            result = ch75k.apply_editor_profile("fake", {"keys": {"bottom-left": "Ctrl+K", "top-left": "F13"}})
+            self.assertIn("다시 읽어 확인", result["message"])
+            self.assertNotIn("bottom-left", result["unsupported"])
+            self.assertEqual(result["profile"]["keys"]["bottom-left"]["sequence"], "Ctrl+K")
+            self.assertEqual(result["profile"]["keys"]["top-left"], "F13")
+            self.assertEqual(fake.flash[first_macro:first_macro + 16], opaque)
+            self.assertEqual(fake.flash[BASE + BUTTONS["bottom-left"]], MACRO_TRIGGERS[5])
+            self.assertEqual(sorted(set(fake.read_addresses())),
+                             [PROFILE_POINTER, *range(BASE, FACTORY_MACRO_END + 16, BLOCK_SIZE)])
+            self.assert_normal_mode(fake)
+            operations = [command[:2] for command in fake.commands]
+            first_finish = operations.index((0x18, 0x11))
+            self.assertIn((0x18, 5), operations[first_finish + 2:-2])
+            hid.assert_called_once_with(self.device)
+            backup.assert_called_once()
+            changes = backup.call_args.args[2]
+            top_left = next(change for change in changes if change.address == BASE + BUTTONS["top-left"])
+            self.assertEqual(top_left.before[0], 0x29)
+
+    def test_editor_apply_reports_resume_failure_without_undoing_verified_write(self):
+        class FailsToResumeUSB(FakeUSB):
+            def set_feature(self, packet):
+                if packet[1:3] == b"\x18\x00" and self.resume_armed and self.readback_started:
+                    raise OSError("simulated resume failure")
+                super().set_feature(packet)
+
+        fake = FailsToResumeUSB(self.original)
+        with (
+            patch("ch75k.select_device", return_value=self.device),
+            patch("ch75k.Hidraw", return_value=nullcontext(fake)),
+            patch("ch75k.SettingsLink", side_effect=lambda h, n: SettingsLink(h, n, lambda _: None)),
+            patch("ch75k._persist_backup", return_value=Path("/fake/backup.json")),
+        ):
+            with self.assertRaisesRegex(ProtocolError, "키 입력 모드로 돌아가지 못했습니다"):
+                ch75k.apply_editor_profile("fake", {"keys": {"top-left": "F13"}})
+            self.assertEqual(fake.flash[BASE + BUTTONS["top-left"]], 0x68)
+            self.assertEqual([command[:2] for command in fake.commands].count((0x18, 9)), 1)
+
+    def test_capture_can_resume_input_without_opening_save_mode_or_writing(self):
+        fake = FakeUSB(self.original)
+        fake.mode = True
+        with (
+            patch("ch75k.select_device", return_value=self.device),
+            patch("ch75k.Hidraw", return_value=nullcontext(fake)),
+            patch("ch75k.SettingsLink", side_effect=lambda h, n: SettingsLink(h, n, lambda _: None)),
+        ):
+            self.assertEqual(ch75k.capture_profile("fake").image, self.original[BASE:FACTORY_MACRO_END])
+            self.assertTrue(fake.mode)
+            fake.commands.clear()
+            snapshot = ch75k.capture_profile("fake", resume=True)
+        self.assertEqual(snapshot.image, self.original[BASE:FACTORY_MACRO_END])
+        self.assert_normal_mode(fake)
+        self.assertFalse(any(command[:2] in {(0x18, 9), (0x09, 0x41)} for command in fake.commands))
+        self.assertEqual(fake.flash, self.original)
+
+    def test_capture_does_not_resume_an_unrecognized_device(self):
+        fake = FakeUSB(self.original)
+        fake.flash[BASE + KEY_MATRIX + 1] = 0x1A
+        with (
+            patch("ch75k.select_device", return_value=self.device),
+            patch("ch75k.Hidraw", return_value=nullcontext(fake)),
+            patch("ch75k.SettingsLink", side_effect=lambda h, n: SettingsLink(h, n, lambda _: None)),
+        ):
+            with self.assertRaises(ProtocolError):
+                ch75k.capture_profile("fake", resume=True)
+        self.assertFalse(any(command[:2] in {(0x18, 0x11), (0x18, 9), (0x09, 0x41)}
+                             for command in fake.commands))
 
     def test_factory_snapshot_stops_at_allocated_macros_without_changing_decode(self):
         fake = FakeUSB(self.original)
@@ -298,7 +446,7 @@ class NativeTests(unittest.TestCase):
         fake = FakeUSB(self.original)
         self.make_apply(fake, changes)
         self.assertEqual(fake.flash[BASE + 0x62], MACRO_TRIGGERS[0])
-        self.assertEqual(fake.commands[-1][:2], (0x20, 0))
+        self.assert_normal_mode(fake)
         self.assertEqual(self.make_changes({"keys": {"bottom-left": "Ctrl+K"}}, fake.flash), [])
 
     def test_macro_allocates_before_key_binding(self):
@@ -325,7 +473,7 @@ class NativeTests(unittest.TestCase):
         with self.assertRaisesRegex(ProtocolError, "기존 설정을 복구"):
             self.make_apply(fake, changes)
         self.assertEqual(fake.flash, self.original)
-        self.assertFalse(fake.mode)
+        self.assert_normal_mode(fake)
 
     def test_snapshot_does_not_commit(self):
         fake = FakeUSB(self.original)

@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 import sys
 
+from device_profile import compare_profile, decode_profile
 from hid_common import COMPANION_PAGE, CONFIG_PAGE, HidrawError
 from protocol import BLOCK_SIZE, PROFILE_POINTER, REPORT_ID, ProtocolError, SettingsLink
 from settings import (
@@ -95,11 +96,14 @@ class DeviceSnapshot:
     image: bytes
 
 
-def capture_profile(selector: str | Device) -> DeviceSnapshot:
+def capture_profile(selector: str | Device, *, resume: bool = False) -> DeviceSnapshot:
     """Read the profile and allocated macros without saving changes."""
     device = selector if isinstance(selector, Device) else select_device(selector)
     with Hidraw(device) as hid:
-        base, image = _snapshot(SettingsLink(hid, device.feature_sizes[REPORT_ID]), True)
+        link = SettingsLink(hid, device.feature_sizes[REPORT_ID])
+        base, image = _snapshot(link, True)
+        if resume:
+            link.finish_configuration()
     return DeviceSnapshot(device, base, image)
 
 
@@ -177,7 +181,7 @@ def _write_and_verify(link: SettingsLink, base: int, changes: list[Change], back
     except BaseException as original:
         if not attempted:
             with suppress(Exception):
-                link.release()
+                link.finish_configuration()
             raise
         try:
             link.begin_configuration(base)
@@ -190,13 +194,23 @@ def _write_and_verify(link: SettingsLink, base: int, changes: list[Change], back
                 f"적용과 자동 복구를 확인하지 못했습니다. 백업 {backup}\n{recovery}") from original
         finally:
             with suppress(Exception):
-                link.release()
+                link.finish_configuration()
         raise ProtocolError(f"적용에 실패해 기존 설정을 복구했습니다. 백업 {backup}\n{original}") from original
     try:
-        link.close_configuration()
+        # The configurator leaves its save-completion reports on the wire last.
+        # Readback transfers run between that sequence and this final resume.
+        link.finish_configuration()
     except Exception as exc:
         raise ProtocolError(
-            f"저장과 읽기 검증을 마쳤지만 USB 설정 모드를 종료하지 못했습니다. 백업 {backup}\n{exc}") from exc
+            f"저장과 읽기 검증을 마쳤지만 키 입력 모드로 돌아가지 못했습니다. 백업 {backup}\n{exc}") from exc
+
+
+def _save_changes(link: SettingsLink, device: Device, base: int, changes: list[Change]) -> str:
+    if not changes:
+        return "현재 장치에 같은 설정이 저장되어 있습니다."
+    backup = _persist_backup(device, base, changes)
+    _write_and_verify(link, base, changes, backup)
+    return f"적용 후 {len(changes)}개 USB 설정 블록을 다시 읽어 확인했습니다.\n백업 {backup}"
 
 
 def apply_profile(selector: str | Device | None, profile: dict, *,
@@ -216,11 +230,30 @@ def apply_profile(selector: str | Device | None, profile: dict, *,
         if expected is not None and (base != expected.base or original[:len(expected.image)] != expected.image):
             raise ProtocolError("비교한 뒤 장치 설정이 바뀌었습니다. 다시 비교해 주세요.")
         changes = plan_changes(base, original, keys, preserve_slots_for=preserve_slots_for)
-        if not changes:
-            return "현재 장치에 같은 설정이 저장되어 있습니다."
-        backup = _persist_backup(device, base, changes)
-        _write_and_verify(link, base, changes, backup)
-    return f"적용 후 {len(changes)}개 USB 설정 블록을 다시 읽어 확인했습니다.\n백업 {backup}"
+        return _save_changes(link, device, base, changes)
+
+
+def apply_editor_profile(selector: str | Device | None, profile: dict) -> dict:
+    """Apply explicit editor mappings against the live profile on one HID handle."""
+    keys = parse_profile(profile)
+    if not keys:
+        raise ValueError("변경할 버튼 설정을 입력하세요.")
+    device = selector if isinstance(selector, Device) else select_device(selector)
+    with Hidraw(device) as hid:
+        link = SettingsLink(hid, device.feature_sizes[REPORT_ID])
+        base, original = _snapshot(link, True)
+        compared = compare_profile(base, original, profile)
+        updates = {button: keys[button] for button in compared["changes"]["keys"]}
+        reserve = sum(len(action.body) for action in updates.values())
+        tail = base + len(original)
+        original += _read_span(link, tail, min(MACRO_END - tail, reserve))
+        changes = plan_changes(base, original, updates, preserve_slots_for=frozenset(compared["unsupported"]))
+        message = _save_changes(link, device, base, changes)
+        saved = bytearray(original)
+        for change in changes:
+            offset = change.address - base
+            saved[offset:offset + len(change.after)] = change.after
+        return {"message": message, "changed": bool(changes), **decode_profile(base, bytes(saved))}
 
 
 def _load_profile(path: Path) -> dict:

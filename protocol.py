@@ -61,16 +61,6 @@ class SettingsLink:
         if len(response) >= 16 and int.from_bytes(response[14:16], "little") != expected_base:
             raise ProtocolError("The active profile address changed. Reconnect and read it again.")
 
-    def release(self):
-        """Run the vendor's final report before closing the USB interface."""
-        try:
-            self.finish_configuration()
-        finally:
-            self.close_configuration()
-
-    def close_configuration(self):
-        self._send(0x00, group=0x20)
-
     def read_block(self, address: int, count: int = BLOCK_SIZE) -> bytes:
         self._check_range(address, count)
         data = bytearray()

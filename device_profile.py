@@ -20,7 +20,8 @@ _DIRECT_NAMES = {code: (kind, name) for kind, actions in DIRECT_ACTIONS.items()
                  for name, code in actions.items()}
 _BUTTON_NAMES = {code: f"Mouse{name.title()}" for name, code in MOUSE_BUTTONS.items()}
 _REPEAT_NAMES = {value: name for name, value in REPEAT_FLAGS.items()}
-_STOCK_SHORTCUTS = {KEYS[key] for key in "acdvx"}
+_STOCK_SHORTCUTS = {(KEYS["ctrl"], KEYS[key]): f"Ctrl+{key.upper()}" for key in "acdvx"}
+_STOCK_SHORTCUTS[(KEYS["win"], KEYS["d"])] = "Win+D"
 
 
 @dataclass(frozen=True)
@@ -50,14 +51,14 @@ def _read_events(image: bytes, start: int, end: int, count: int) -> tuple[list[_
 
 
 def _stock_shortcut(events: list[_Event]) -> str | None:
-    # Factory clipboard shortcuts release Ctrl before the letter. The editor
+    # Factory shortcuts can release the modifier before the letter. The editor
     # models the same shortcut as a chord and preserves the stored bytes on equality.
-    if len(events) != 4 or events[1].opcode not in _STOCK_SHORTCUTS:
+    if len(events) != 4:
         return None
-    ctrl, key = KEYS["ctrl"], events[1].opcode
-    if events == [_Event(ctrl, 6, True), _Event(key, 6, True),
-                  _Event(ctrl, 6, False), _Event(key, 6, False)]:
-        return f"Ctrl+{_KEY_NAMES[key]}"
+    modifier, key = events[0].opcode, events[1].opcode
+    if events == [_Event(modifier, 6, True), _Event(key, 6, True),
+                  _Event(modifier, 6, False), _Event(key, 6, False)]:
+        return _STOCK_SHORTCUTS.get((modifier, key))
     return None
 
 
@@ -178,12 +179,11 @@ def decode_profile(base: int, image: bytes) -> dict:
     return {"profile": {"keys": keys}, "unsupported": unsupported}
 
 
-def compare_profile(base: int, image: bytes, draft: dict) -> dict:
-    """Compare encoded actions and select only explicit, safe hardware updates."""
+def compare_editor_profiles(baseline: dict, draft: dict) -> dict:
+    """Compare the hardware encoding of two editor profiles without USB I/O."""
     editor = parse_profile(draft)
-    decoded = decode_profile(base, image)
-    device_values = decoded["profile"]["keys"]
-    device = parse_profile(decoded["profile"])
+    device = parse_profile(baseline)
+    device_values = baseline.get("keys", {})
     draft_values = draft.get("keys", {})
     differences = []
     changes = {}
@@ -202,4 +202,10 @@ def compare_profile(base: int, image: bytes, draft: dict) -> dict:
         })
         if desired is not None:
             changes[button] = draft_values[button]
-    return {**decoded, "differences": differences, "changes": {"keys": changes}}
+    return {"differences": differences, "changes": {"keys": changes}}
+
+
+def compare_profile(base: int, image: bytes, draft: dict) -> dict:
+    """Compare encoded actions and select only explicit, safe hardware updates."""
+    decoded = decode_profile(base, image)
+    return {**decoded, **compare_editor_profiles(decoded["profile"], draft)}

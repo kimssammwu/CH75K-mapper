@@ -121,9 +121,8 @@
   .preview-delay { color:var(--muted); font:600 10px/1.4 ui-monospace,monospace }
   .preview-mode { flex-basis:100%; margin-top:3px; color:var(--blue-ink); font-size:11px; font-weight:700 }
 
-  .footer,.footer-end,.device,.device-state,.device-picker { display:flex; flex-wrap:wrap; align-items:center; gap:10px }
+  .footer,.footer-end,.device,.device-state { display:flex; flex-wrap:wrap; align-items:center; gap:10px }
   .footer { justify-content:space-between; margin-top:13px; min-height:47px; padding:0 2px }
-  .device-picker { gap:8px }
   .status-chip { white-space:nowrap; display:inline-flex; align-items:center; gap:6px; padding:5px 8px; background:#e9edf5; border-radius:7px; color:#455475; font-size:11px; font-weight:740 }
   .status-chip::before { content:""; width:6px; height:6px; border-radius:50%; background:#7990af }
   .status-chip.connected { background:#e9f7ed; color:#175d3c }
@@ -131,8 +130,6 @@
   .device-note,#profile-count { color:var(--muted); font-size:12px; line-height:1.55 }
   .device-note:empty { display:none }
   .device-select { min-height:35px; padding:5px 8px; font-size:12px; width:auto; max-width:100% }
-  .confirm { display:inline-flex; align-items:center; gap:5px; font-size:12px; line-height:1.4 }
-  .confirm input { accent-color:var(--blue); margin:0; flex:none }
   .operation-toast {
     position:fixed; z-index:2; left:50%; bottom:max(18px,env(safe-area-inset-bottom)); transform:translateX(-50%);
     width:max-content; max-width:min(560px,calc(100% - 24px)); padding:10px 16px; pointer-events:none;
@@ -141,24 +138,12 @@
   }
   .operation-toast:empty { opacity:0 }
   .operation-toast.error { background:#fff4ef; color:#873e22; border-color:#f0d9d0 }
-  .conflict-dialog { width:min(650px,calc(100% - 28px)); max-height:calc(100% - 28px); padding:clamp(15px,4vw,25px); border:1px solid var(--edge); border-radius:18px; background:var(--white); color:var(--ink); box-shadow:0 20px 60px #1723433d }
-  .conflict-dialog::backdrop { background:#19213769 }
-  .conflict-dialog h2 { font-size:clamp(20px,4vw,25px); line-height:1.3 }
-  .conflict-dialog p { color:var(--muted); font-size:13px; line-height:1.5 }
-  .conflict-dialog h2 + p { margin-top:6px }
-  .conflict-values { max-height:min(40vh,300px); overflow:auto; margin:16px 0 10px; border:1px solid var(--edge); border-radius:9px }
-  .conflict-values table { table-layout:fixed; border-spacing:0; width:100%; font-size:12px; line-height:1.45 }
-  .conflict-values th,.conflict-values td { padding:8px; text-align:left; vertical-align:top; overflow-wrap:anywhere }
-  .conflict-values thead th { position:sticky; top:0; background:#f0f3fa; color:var(--muted); box-shadow:0 1px var(--edge) }
-  .conflict-values tr > :first-child { width:24% }
-  .conflict-values tbody th,.conflict-values tbody td { border-top:1px solid var(--edge) }
-  .conflict-values tbody tr:first-child > * { border-top:0 }
-  .conflict-values td { white-space:pre-line }
-  .conflict-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:8px; margin-top:17px }
-  .conflict-actions #conflict-later { margin-right:auto }
-  @media(max-width:530px) {
-    .conflict-actions .control { width:100%; white-space:normal }
-  }
+  .device-dialog { width:min(420px,calc(100% - 28px)); max-height:calc(100% - 28px); padding:clamp(15px,4vw,25px); border:1px solid var(--edge); border-radius:18px; background:var(--white); color:var(--ink); box-shadow:0 20px 60px #1723433d }
+  .device-dialog::backdrop { background:#19213769 }
+  .device-dialog h2 { font-size:clamp(20px,4vw,25px); line-height:1.3 }
+  .device-dialog p { color:var(--muted); font-size:13px; line-height:1.5; overflow-wrap:anywhere }
+  .device-dialog h2 + p { margin-top:8px }
+  .device-dialog-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:8px; margin-top:17px }
   @media(max-width:1080px) {
     .layout { padding-inline:28px }
     .workspace { grid-template-columns:minmax(0,1fr) minmax(285px,324px) }
@@ -205,6 +190,7 @@
   <symbol id="ui-folder" viewBox="0 0 20 20"><path d="M2.6 6a1.4 1.4 0 0 1 1.4-1.4h4.2l1.7 2H16A1.4 1.4 0 0 1 17.4 8v6.3A1.7 1.7 0 0 1 15.7 16H4.3a1.7 1.7 0 0 1-1.7-1.7Z"/></symbol>
   <symbol id="ui-save" viewBox="0 0 20 20"><path d="M10 2.8v8.4m-3.2-3.1L10 11.4l3.2-3.3M3.5 12v3.7c0 .6.5 1.1 1.1 1.1h10.8c.6 0 1.1-.5 1.1-1.1V12"/></symbol>
   <symbol id="ui-apply" viewBox="0 0 20 20"><path d="m4.2 10 3.8 3.8 7.8-7.6"/></symbol>
+  <symbol id="ui-refresh" viewBox="0 0 20 20"><path d="M16 8A6.2 6.2 0 1 0 16 12m0-8v4h-4"/></symbol>
 </svg>
 <main class="layout">
   <header class="mast" aria-label="CH75K Studio">
@@ -219,6 +205,7 @@
       <button class="control" type="button" id="import-button"><svg class="icon" aria-hidden="true"><use href="#ui-folder"/></svg>불러오기</button>
       <button class="control export-control" type="button" id="export-button"><svg class="icon" aria-hidden="true"><use href="#ui-save"/></svg>프로필 저장</button>
       <button class="control" type="button" id="quit-button" hidden>종료</button>
+      <button class="control" type="button" id="refresh-devices" hidden><svg class="icon" aria-hidden="true"><use href="#ui-refresh"/></svg>장치 새로고침</button>
       <input type="file" accept=".json,application/json" id="profile-file" hidden>
     </div>
   </header>
@@ -255,7 +242,7 @@
             <label for="key-input" id="key-label">키 동작</label>
             <label for="macro-input" id="macro-label" hidden>매크로 순서</label>
             <label for="mapped-action" id="mapped-label" hidden>동작</label>
-            <button type="button" class="clear" id="clear-button">입력 지우기</button>
+            <button type="button" class="clear" id="clear-button" title="장치에 적용하면 이 키를 기본값으로 되돌립니다.">입력 지우기</button>
           </div>
           <div id="key-fields">
             <input type="text" id="key-input" class="field-control" aria-describedby="key-help" placeholder="예  Ctrl+C" spellcheck="false" autocomplete="off" maxlength="2048">
@@ -326,35 +313,25 @@
   <footer class="footer">
     <div class="device" aria-label="USB 장치">
       <div class="device-state"><span class="status-chip" id="device-status">오프라인</span><p class="device-note" id="device-note"></p></div>
-      <div class="device-picker">
-        <select class="field-control device-select" id="device-select" aria-label="USB 장치 선택" hidden></select>
-        <label class="confirm" id="confirm-control" hidden><input type="checkbox" id="confirm">CH75K 모델 확인</label>
-      </div>
+      <select class="field-control device-select" id="device-select" aria-label="USB 장치 선택" hidden></select>
     </div>
     <div class="footer-end">
       <p id="profile-count"></p>
       <div class="footer-actions" id="hardware-actions" hidden>
-        <button class="control" id="read-button" type="button">장치에서 읽기</button>
-        <button class="control primary" id="apply-button" type="button"><svg class="icon" aria-hidden="true"><use href="#ui-apply"/></svg>장치에 적용</button>
+        <button class="control" id="read-button" type="button" disabled>장치에서 읽기</button>
+        <button class="control primary" id="apply-button" type="button" disabled><svg class="icon" aria-hidden="true"><use href="#ui-apply"/></svg>장치에 적용</button>
       </div>
     </div>
   </footer>
 </main>
 <p id="operation-message" class="operation-toast" role="status" aria-atomic="true"></p>
-<dialog id="settings-conflict" class="conflict-dialog" aria-labelledby="settings-conflict-title" aria-describedby="settings-conflict-help settings-conflict-note">
-  <h2 id="settings-conflict-title">장치와 편집 설정이 다릅니다</h2>
-  <p id="settings-conflict-help">어느 쪽의 설정을 사용할지 선택하세요.</p>
-  <div class="conflict-values" tabindex="0" role="region" aria-label="키 설정 비교">
-    <table>
-      <thead><tr><th scope="col">버튼</th><th scope="col">장치에 저장됨</th><th scope="col">편집 중</th></tr></thead>
-      <tbody id="settings-conflict-table"></tbody>
-    </table>
-  </div>
-  <p id="settings-conflict-note" hidden></p>
-  <div class="conflict-actions">
-    <button class="control" id="conflict-later" type="button" autofocus>나중에</button>
-    <button class="control" id="conflict-load" type="button">장치 설정 불러오기</button>
-    <button class="control primary" id="conflict-write" type="button">편집 설정을 장치에 쓰기</button>
+<dialog id="device-dialog" class="device-dialog" aria-labelledby="device-dialog-title" aria-describedby="device-dialog-name device-dialog-help">
+  <h2 id="device-dialog-title">새로운 장치가 인식되었습니다</h2>
+  <p id="device-dialog-name"></p>
+  <p id="device-dialog-help">연결한 장치가 CH75K인지 확인하세요.</p>
+  <div class="device-dialog-actions">
+    <button class="control" id="device-reject" type="button" autofocus>거절</button>
+    <button class="control primary" id="device-confirm" type="button">확인</button>
   </div>
 </dialog>
 <script>
@@ -401,9 +378,11 @@
   const mouseAction = byId("mouse-action");
   const types = [...document.querySelectorAll("[data-action-type]")];
   const clearButton = byId("clear-button");
-  const confirm = byId("confirm");
   const deviceSelect = byId("device-select");
-  const conflictDialog = byId("settings-conflict");
+  const deviceDialog = byId("device-dialog");
+  const refreshButton = byId("refresh-devices");
+  const readButton = byId("read-button");
+  const applyButton = byId("apply-button");
   const operationMessage = byId("operation-message");
   const nativeBridge = window.webkit?.messageHandlers?.ch75k;
   const hasBridge = typeof nativeBridge?.postMessage === "function";
@@ -416,11 +395,15 @@
   let busy = false;
   let closed = false;
   let scanning = false;
+  let scanError = "";
   let devices = [];
+  const deviceDecisions = new Map();
+  let activeDevice = null;
+  let offeredDevice = null;
+  let deviceProfile = null;
   let currentMappings = {};
-  let connectionRevision = 0;
-  let comparedOnConfirmation = false;
-  let comparison = null;
+  let review = null;
+  let reviewTimer;
   let profile = {keys:{}};
   let storageAvailable;
   let pressedTimer;
@@ -437,6 +420,7 @@
     if (validText(action)) return action.trim();
     if (isObject(action)) {
       const {type, sequence, repeat, count} = action;
+      if (type === "default" && Object.keys(action).length === 1) return {type};
       if (type === "macro" && validText(sequence) && sequence.trim() && typeof repeat === "string" && own(repeatLabels, repeat)
         && Object.keys(action).every(key => ["type", "sequence", "repeat", "count"].includes(key))) {
         if (repeat === "count" && Number.isInteger(count) && count >= 1 && count <= Number(repeatCount.max)) {
@@ -521,8 +505,9 @@
   function repeatLabel(value) {
     return value.repeat === "count" ? value.count + "회 실행" : repeatLabels[value.repeat] + " 반복";
   }
-  function keyActionLabel(value) {
+  function keyActionLabel(value, id) {
     if (typeof value === "string") return value;
+    if (value.type === "default") return `기본값 · ${keyDefaults[id]}`;
     return value.type === "macro" ? "매크로 · " + repeatLabel(value) : actionLabels[value.type][value.action];
   }
   function defaultLabel(id) {
@@ -531,7 +516,7 @@
   function labelOf(id) {
     if (isFixed(id)) return fixedActions[id].label;
     const value = valueOf(id);
-    if (value) return keyActionLabel(value);
+    if (value) return keyActionLabel(value, id);
     return currentMappings[id] || defaultLabel(id);
   }
   function showMessage(text, {error = false, persistent = false} = {}) {
@@ -543,9 +528,6 @@
     }
   }
 
-  const partOrder = ["top-left", "top-center", "top-right", "bottom-left", "bottom-center", "bottom-right",
-                     "dial", "screen-toggle"];
-
   const targets = [...model.querySelectorAll("[data-control]")].filter(node => own(controlNames, node.dataset.control));
   const callouts = [...model.querySelectorAll("[data-action-label]")].filter(node => own(controlNames, node.dataset.actionLabel));
   function renderSelection() {
@@ -553,7 +535,8 @@
     for (const target of targets) {
       const id = target.dataset.control;
       target.classList.toggle("is-selected", id === selected);
-      target.classList.toggle("has-custom-action", !isFixed(id) && Boolean(valueOf(id)));
+      const value = valueOf(id);
+      target.classList.toggle("has-custom-action", !isFixed(id) && Boolean(value) && typeOf(value) !== "default");
       target.setAttribute("aria-pressed", String(id === selected));
       target.setAttribute("aria-label", [keycaps[id], controlNames[id], labelOf(id)].filter(Boolean).join(" · "));
     }
@@ -571,7 +554,9 @@
       if (group) group.setAttribute("display", id === selected ? "inline" : "none");
     }
     byId("figure-readout").textContent = (keycaps[selected] || controlNames[selected]) + " · " + labelOf(selected);
-    clearButton.disabled = !valueOf(selected) && !(actionType === "macro" && macroInput.value.trim());
+    const value = valueOf(selected);
+    clearButton.disabled = isFixed(selected) || typeOf(value) === "default"
+      || !(value || currentMappings[selected] || (actionType === "macro" && macroInput.value.trim()));
     renderFooter();
     renderPreview();
   }
@@ -587,7 +572,9 @@
     byId("fixed-fields").hidden = !fixed;
     if (fixed) byId("fixed-description").textContent = fixedActions[id].description;
     const value = valueOf(id);
-    showKeyType(fixed ? "" : typeOf(value) || "keyboard", value);
+    const type = typeOf(value);
+    const editorType = type === "default" ? "keyboard" : type || "keyboard";
+    showKeyType(fixed ? "" : editorType, value);
     renderSelection();
     if (animate) {
       clearTimeout(pressedTimer);
@@ -626,7 +613,8 @@
     renderSelection();
   }
   function changeKey(value) {
-    if (value || actionType === typeOf(valueOf(selected))) changeValue(value);
+    if (value) changeValue(value);
+    else if (actionType === typeOf(valueOf(selected))) changeValue({type:"default"});
     else renderSelection();
   }
   function invalidRepeat() {
@@ -658,7 +646,10 @@
   macroInput.addEventListener("input", changeMacro);
   repeatInput.addEventListener("change", changeMacro);
   repeatCount.addEventListener("input", changeMacro);
-  mappedInput.addEventListener("change", () => changeKey(mappedInput.value ? {type:actionType, action:mappedInput.value} : ""));
+  mappedInput.addEventListener("change", () => {
+    if (mappedInput.value) changeValue({type:actionType, action:mappedInput.value});
+    else if (actionType === typeOf(valueOf(selected))) changeValue("");
+  });
   clearButton.addEventListener("click", () => {
     const field = actionType === "keyboard" ? keyInput : actionType === "macro" ? macroInput : mappedInput;
     field.value = "";
@@ -667,7 +658,7 @@
       updateRepeatField();
     }
     field.focus();
-    changeValue("");
+    changeValue({type:"default"});
   });
   document.querySelectorAll("[data-preset]").forEach(button => button.addEventListener("click", () => {
     keyInput.value = button.dataset.preset;
@@ -857,14 +848,18 @@
         : defaultLabel(selected);
       return;
     }
+    if (typeOf(value) === "default") {
+      content.textContent = keyActionLabel(value, selected);
+      return;
+    }
     if (actionType !== typeOf(value)) {
-      content.textContent = "현재 설정 · " + keyActionLabel(value);
+      content.textContent = "현재 설정 · " + keyActionLabel(value, selected);
       return;
     }
     const isMacro = actionType === "macro";
     const sequence = isMacro ? value.sequence : typeof value === "string" ? value : "";
     if (!sequence) {
-      content.textContent = keyActionLabel(value);
+      content.textContent = keyActionLabel(value, selected);
     } else {
       content.className = "preview-body preview-ring";
       content.replaceChildren();
@@ -962,7 +957,7 @@
   function api(endpoint, data = {}) {
     return new Promise((resolve, reject) => {
       const id = ++nextRequest;
-      const timer = endpoint === "compare" || endpoint === "sync-apply" ? undefined : setTimeout(() => {
+      const timer = ["compare", "apply", "reload"].includes(endpoint) ? undefined : setTimeout(() => {
         pending.delete(id);
         reject(new Error("CH75K 도구의 응답 시간이 초과됐습니다."));
       }, 10000);
@@ -976,135 +971,194 @@
       }
     });
   }
+  function reviewProfileChanges() {
+    if (review?.baseline === deviceProfile && review.revision === draftRevision) return;
+    clearTimeout(reviewTimer);
+    review = null;
+    if (!deviceProfile || busy || closed) return;
+    const task = review = {baseline:deviceProfile, revision:draftRevision};
+    reviewTimer = setTimeout(async () => {
+      try {
+        const result = await api("profile-changes", {profile:parseProfile(profile), baseline:task.baseline});
+        if (review !== task) return;
+        task.changes = parseProfile(result.changes);
+      } catch (error) {
+        if (review !== task) return;
+        task.error = error.message;
+      }
+      renderFooter();
+    }, 120);
+  }
   function renderFooter() {
-    const count = Object.keys(profile.keys).length;
+    reviewProfileChanges();
+    const count = Object.keys(deviceProfile ? review?.changes?.keys || {} : profile.keys).length;
     const profileCount = byId("profile-count");
-    profileCount.textContent = !storageAvailable ? "보관하려면 프로필을 저장하세요." : count ? count + "개 편집됨" : "";
+    profileCount.textContent = !storageAvailable ? "보관하려면 프로필을 저장하세요."
+      : review?.error ? "편집한 키 설정을 확인하세요."
+      : count ? count + "개 편집됨" : "";
+    profileCount.title = review?.error || "";
     profileCount.hidden = !profileCount.textContent;
-    const mayUseDevice = hasBridge && deviceSelect.value && confirm.checked && !busy;
-    byId("read-button").disabled = !mayUseDevice;
-    byId("apply-button").disabled = !mayUseDevice || count === 0 || invalidRepeat();
-    deviceSelect.disabled = busy;
-    confirm.disabled = busy;
+    const mayUseDevice = isAcceptedDevice(activeDevice) && !scanning && !busy && !closed && !scanError;
+    readButton.disabled = !mayUseDevice;
+    applyButton.disabled = !mayUseDevice || !deviceProfile || !count || invalidRepeat();
+    deviceSelect.disabled = scanning || busy;
+    refreshButton.disabled = scanning || busy || closed;
+    if (hasBridge) renderDeviceStatus();
   }
-  function closeConflict() {
-    const snapshot = comparison;
-    comparison = null;
-    if (conflictDialog.open) conflictDialog.close();
-    return snapshot;
+  function isAcceptedDevice(device) {
+    return device && deviceDecisions.get(device.identity) === "accepted";
   }
-  function resetDeviceComparison() {
-    connectionRevision++;
-    comparedOnConfirmation = false;
-    currentMappings = {};
-    if (closeConflict()) showMessage("CH75K 연결이 바뀌었습니다. 장치를 다시 확인해 주세요.", {error:true});
+  function devicePayload(device, profile) {
+    return {device:device.id, identity:device.identity, confirmed:true, profile};
   }
-  function isCurrentConnection(snapshot) {
-    return !closed && confirm.checked && deviceSelect.value === snapshot.payload.device
-      && snapshot.connection === connectionRevision;
+  function isCurrentDevice(device) {
+    return !closed && activeDevice?.identity === device.identity && isAcceptedDevice(activeDevice);
   }
-  function requireCurrentComparison(snapshot) {
-    if (!isCurrentConnection(snapshot)) throw new Error("CH75K 연결이 바뀌었습니다. 장치를 다시 확인해 주세요.");
-    if (snapshot.revision !== draftRevision) throw new Error("편집 설정이 바뀌었습니다. 다시 비교해 주세요.");
-  }
-  function conflictValue(value, empty) {
-    if (!value) return empty;
-    return isObject(value) && value.type === "macro"
-      ? value.sequence + "\n" + repeatLabel(value) : keyActionLabel(value);
-  }
-  function showConflict(snapshot) {
-    const {result, deviceProfile, payload} = snapshot;
-    const changes = new Map(result.differences.map(item => [item.button, item]));
-    const table = byId("settings-conflict-table");
-    const notes = byId("settings-conflict-note");
-    table.replaceChildren();
-    for (const id of partOrder) {
-      const unsupported = result.unsupported[id];
-      if (!changes.has(id) && !unsupported) continue;
-      const item = changes.get(id);
-      const row = table.insertRow();
-      const heading = document.createElement("th");
-      heading.scope = "row";
-      heading.textContent = controlNames[id];
-      row.append(heading);
-      row.insertCell().textContent = unsupported || conflictValue(item?.device, "값을 읽을 수 없음");
-      row.insertCell().textContent = conflictValue(item?.editor ?? payload.profile.keys[id], "미지정 · 장치 값 유지");
+  function selectDevice(device) {
+    deviceSelect.value = device?.id || "";
+    if (activeDevice?.identity !== device?.identity) {
+      deviceProfile = null;
+      currentMappings = {};
     }
-    notes.textContent = Object.keys(result.unsupported).length
-      ? "읽을 수 없는 항목은 불러올 때 편집값을 유지합니다. 장치에 쓰기를 선택하면 편집값을 지정한 키만 바뀝니다."
-      : "편집값을 지정하지 않은 키는 장치에서 그대로 유지됩니다.";
-    notes.hidden = false;
-    byId("conflict-load").disabled = !result.differences.some(({button}) => own(deviceProfile.keys, button));
-    byId("conflict-write").disabled = !Object.keys(result.changes.keys).length || invalidRepeat();
-    comparison = snapshot;
+    activeDevice = device;
+  }
+  function renderDeviceStatus() {
+    const accepted = isAcceptedDevice(activeDevice);
+    const rejected = deviceDecisions.get(activeDevice?.identity) === "rejected";
+    const ready = accepted && deviceProfile && !scanError;
+    figure.dataset.deviceConnected = String(Boolean(devices.length && !scanError));
+    byId("device-status").classList.toggle("connected", Boolean(ready));
+    byId("device-status").textContent = scanError ? "연결 확인 필요" : ready ? "장치 연결됨"
+      : accepted ? "설정 확인 필요"
+      : rejected ? "장치 확인 거절" : activeDevice ? "장치 감지" : "연결 대기";
+    byId("device-note").textContent = scanError || (rejected ? "다시 확인하려면 장치를 새로고침하세요."
+      : activeDevice ? "" : "CH75K를 USB-C로 연결하세요.");
+  }
+  function closeDeviceDialog() {
+    const device = offeredDevice;
+    offeredDevice = null;
+    if (deviceDialog.open) deviceDialog.close();
+    return device;
+  }
+  function offerNewDevice() {
+    if (busy || closed || scanError || offeredDevice) return false;
+    const candidate = [activeDevice, ...devices].find(device => device && !deviceDecisions.has(device.identity));
+    if (!candidate) return false;
+    offeredDevice = candidate;
+    byId("device-dialog-name").textContent = candidate.label;
     cancelKeyCapture();
-    showMessage("");
-    conflictDialog.showModal();
+    deviceDialog.showModal();
+    return true;
   }
   function displayDevices(found) {
-    const previous = devices.find(device => device.id === deviceSelect.value);
-    let clearedMappings = false;
     if (JSON.stringify(devices) !== JSON.stringify(found)) {
       devices = found;
-      deviceSelect.replaceChildren();
-      if (devices.length > 1) deviceSelect.add(new Option("장치를 선택하세요", ""));
-      for (const item of devices) deviceSelect.add(new Option(item.label, item.id));
-      if (previous && devices.some(item => item.id === previous.id && item.label === previous.label
-        && item.identity === previous.identity)) {
-        deviceSelect.value = previous.id;
-      } else {
-        confirm.checked = false;
-        clearedMappings = Object.keys(currentMappings).length > 0;
-        resetDeviceComparison();
+      const attached = new Set(devices.map(device => device.identity));
+      for (const identity of deviceDecisions.keys()) {
+        if (!attached.has(identity)) deviceDecisions.delete(identity);
       }
+      if (offeredDevice && !attached.has(offeredDevice.identity)) closeDeviceDialog();
+      deviceSelect.replaceChildren(...devices.map(device => new Option(device.label, device.id)));
+      selectDevice(devices.find(device => device.identity === activeDevice?.identity)
+        || devices.find(isAcceptedDevice) || devices[0] || null);
+      deviceSelect.hidden = devices.length === 0;
+      renderSelection();
     }
-    const present = devices.length > 0;
-    figure.dataset.deviceConnected = String(present);
-    deviceSelect.hidden = !present;
-    byId("confirm-control").hidden = !deviceSelect.value;
-    byId("device-status").classList.toggle("connected",present);
-    byId("device-status").textContent = present ? "장치 감지" : "연결 대기";
-    byId("device-note").textContent = present ? "" : "CH75K를 USB-C로 연결하세요.";
-    if (clearedMappings) renderSelection();
-    else renderFooter();
   }
-  async function refreshDevices() {
-    if (!hasBridge || closed || scanning || busy || document.hidden) return;
-    scanning = true;
+  async function reloadDeviceSettings(device) {
+    showMessage("CH75K 설정을 확인하고 키 입력 모드를 복구하는 중…", {persistent:true});
     try {
-      const result = await api("devices");
-      if (!closed) displayDevices(result.devices || []);
+      const result = await api("reload", devicePayload(device));
+      if (closed) return;
+      if (result.device?.id !== device.id || result.device.identity !== device.identity) {
+        throw new Error("CH75K 연결이 바뀌었습니다. 장치를 다시 확인해 주세요.");
+      }
+      displayDevices(result.devices);
+      requireCurrentDevice(device);
+      recordDeviceProfile(result);
+      renderSelection();
+      showMessage(result.message || "저장한 설정을 확인하고 키 입력 모드 복귀 명령을 보냈습니다.");
     } catch (error) {
       if (closed) return;
-      displayDevices([]);
-      byId("device-status").textContent = "연결 끊김";
-      byId("device-note").textContent = error.message;
-    } finally {
-      scanning = false;
+      if (isCurrentDevice(device)) {
+        deviceProfile = null;
+        currentMappings = {};
+        renderSelection();
+      }
+      showMessage(error.message, {error:true});
     }
   }
-  async function compareSettings() {
-    if (busy || !deviceSelect.value || !confirm.checked) return;
+  async function refreshDevices({manual = false} = {}) {
+    if (!hasBridge || closed || scanning || busy || (!manual && document.hidden)) return;
+    scanning = true;
+    renderFooter();
+    let shouldRead = false;
+    try {
+      const result = await api("devices");
+      if (closed) return;
+      scanError = "";
+      if (manual) {
+        for (const [identity, decision] of deviceDecisions) {
+          if (decision === "rejected") deviceDecisions.delete(identity);
+        }
+      }
+      const previous = activeDevice;
+      displayDevices(result.devices || []);
+      const accepted = isAcceptedDevice(activeDevice);
+      const sameAttachment = previous?.identity === activeDevice?.identity;
+      if (manual && accepted && sameAttachment && !offeredDevice) {
+        await reloadDeviceSettings(activeDevice);
+      } else {
+        const prompted = offerNewDevice();
+        shouldRead = (manual || !sameAttachment) && !prompted && accepted;
+      }
+      if (manual && !devices.length) showMessage("연결된 CH75K 장치가 없습니다.");
+    } catch (error) {
+      if (closed) return;
+      scanError = error.message;
+      closeDeviceDialog();
+      if (manual) showMessage(error.message, {error:true});
+    } finally {
+      scanning = false;
+      renderFooter();
+    }
+    if (shouldRead) await readDeviceSettings();
+  }
+  function recordDeviceProfile(result) {
+    deviceProfile = parseProfile(result.profile);
+    currentMappings = {...result.unsupported, ...Object.fromEntries(Object.entries(deviceProfile.keys).map(
+      ([id, value]) => [id, keyActionLabel(value, id)]))};
+  }
+  function requireCurrentDevice(device) {
+    if (!isCurrentDevice(device)) throw new Error("CH75K 연결이 바뀌었습니다. 장치를 다시 확인해 주세요.");
+  }
+  async function readDeviceSettings({copyToEditor = false} = {}) {
+    if (scanning || busy || closed || scanError || !isAcceptedDevice(activeDevice)) return;
+    const device = activeDevice;
+    const editorRevision = draftRevision;
     busy = true;
     renderFooter();
-    showMessage("장치에 저장된 설정을 읽고 비교하는 중…", {persistent:true});
+    showMessage("장치에 저장된 설정을 읽는 중…", {persistent:true});
     try {
-      const snapshot = {payload:{device:deviceSelect.value, confirmed:true, profile:parseProfile(profile)},
-                        connection:connectionRevision, revision:draftRevision};
-      snapshot.result = await api("compare", snapshot.payload);
-      requireCurrentComparison(snapshot);
-      const result = snapshot.result;
-      snapshot.deviceProfile = parseProfile(result.profile);
-      currentMappings = {...result.unsupported, ...Object.fromEntries(Object.entries(snapshot.deviceProfile.keys).map(
-        ([id, value]) => [id, keyActionLabel(value)]))};
-      renderSelection();
-      if (result.differences.length) showConflict(snapshot);
-      else {
-        const skipped = Object.keys(result.unsupported).length;
-        showMessage(skipped ? "비교할 수 있는 설정은 같습니다. 읽을 수 없는 장치 값 " + skipped + "개는 그대로 유지합니다."
-          : "장치와 편집 설정이 같습니다.");
+      const result = await api("compare", devicePayload(device, {keys:{}}));
+      requireCurrentDevice(device);
+      recordDeviceProfile(result);
+      if (copyToEditor && draftRevision === editorRevision) {
+        profile = {keys:{...profile.keys, ...deviceProfile.keys}};
+        storeProfile();
+        selectPart(selected);
+        showMessage("장치 설정을 편집기에 불러왔습니다.");
+      } else {
+        renderSelection();
+        showMessage(copyToEditor ? "장치 설정을 읽었습니다. 읽는 동안 바꾼 편집값은 그대로 두었습니다."
+          : "장치 설정을 확인했습니다.");
       }
     } catch (error) {
+      if (isCurrentDevice(device)) {
+        deviceProfile = null;
+        currentMappings = {};
+        renderSelection();
+      }
       if (!closed) showMessage(error.message, {error:true});
     } finally {
       busy = false;
@@ -1112,36 +1166,25 @@
       refreshDevices();
     }
   }
-  function loadDeviceSettings() {
-    const snapshot = closeConflict();
-    if (!snapshot) return;
-    try {
-      requireCurrentComparison(snapshot);
-      profile = {keys:{...profile.keys, ...snapshot.deviceProfile.keys}};
-      storeProfile();
-      selectPart(selected);
-      showMessage("장치 설정을 편집기에 불러왔습니다.");
-    } catch (error) {
-      showMessage(error.message, {error:true});
-    }
-  }
-  async function writeEditorSettings() {
-    const snapshot = closeConflict();
-    if (!snapshot) return;
+  async function writeDeviceSettings() {
+    if (applyButton.disabled) return;
+    const device = activeDevice;
+    const changes = review.changes;
     busy = true;
     renderFooter();
     showMessage("변경된 키 설정을 장치에 쓰고 확인하는 중…", {persistent:true});
     try {
-      requireCurrentComparison(snapshot);
-      const result = await api("sync-apply", {...snapshot.payload, token:snapshot.result.token});
-      if (!isCurrentConnection(snapshot)) {
-        if (!closed) showMessage("");
-        return;
-      }
-      for (const [id, value] of Object.entries(snapshot.result.changes.keys)) currentMappings[id] = keyActionLabel(value);
+      const result = await api("apply", devicePayload(device, changes));
+      requireCurrentDevice(device);
+      recordDeviceProfile(result);
       renderSelection();
       showMessage(result.message || "편집 설정을 장치에 저장했습니다.");
     } catch (error) {
+      if (isCurrentDevice(device)) {
+        deviceProfile = null;
+        currentMappings = {};
+        renderSelection();
+      }
       if (!closed) showMessage(error.message, {error:true});
     } finally {
       busy = false;
@@ -1149,30 +1192,35 @@
       refreshDevices();
     }
   }
-  function deferConflict() {
-    if (closeConflict()) showMessage("장치와 편집 설정을 그대로 유지했습니다.");
+  byId("device-confirm").addEventListener("click", () => {
+    const device = closeDeviceDialog();
+    if (!device) return;
+    deviceDecisions.set(device.identity, "accepted");
+    selectDevice(device);
+    renderSelection();
+    readDeviceSettings();
+  });
+  function rejectDevice() {
+    const device = closeDeviceDialog();
+    if (!device) return;
+    deviceDecisions.set(device.identity, "rejected");
+    renderFooter();
   }
-  byId("conflict-load").addEventListener("click", loadDeviceSettings);
-  byId("conflict-write").addEventListener("click", writeEditorSettings);
-  byId("conflict-later").addEventListener("click", deferConflict);
-  conflictDialog.addEventListener("cancel", event => {
+  byId("device-reject").addEventListener("click", rejectDevice);
+  deviceDialog.addEventListener("cancel", event => {
     event.preventDefault();
-    deferConflict();
+    rejectDevice();
   });
   deviceSelect.addEventListener("change", () => {
-    confirm.checked = false;
-    resetDeviceComparison();
-    byId("confirm-control").hidden = !deviceSelect.value;
+    selectDevice(devices.find(device => device.id === deviceSelect.value) || null);
     renderSelection();
+    if (isAcceptedDevice(activeDevice)) readDeviceSettings();
+    else offerNewDevice();
   });
-  confirm.addEventListener("change", () => {
-    renderFooter();
-    if (!confirm.checked || comparedOnConfirmation) return;
-    comparedOnConfirmation = true;
-    compareSettings();
-  });
-  byId("read-button").addEventListener("click", compareSettings);
-  byId("apply-button").addEventListener("click", compareSettings);
+  refreshButton.hidden = !hasBridge;
+  refreshButton.addEventListener("click", () => refreshDevices({manual:true}));
+  readButton.addEventListener("click", () => readDeviceSettings({copyToEditor:true}));
+  applyButton.addEventListener("click", writeDeviceSettings);
   const quitButton = byId("quit-button");
   let devicePolling;
   quitButton.hidden = !hasBridge;
