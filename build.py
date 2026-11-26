@@ -44,12 +44,13 @@ def release_documents() -> list[tuple[Path, Path]]:
 
 
 def windows_binding_notices() -> list[tuple[Path, Path]]:
-    notices = []
+    folder = SOURCE / "licenses" / "windows"
+    notices = [(notice, notice.relative_to(SOURCE)) for notice in sorted(folder.glob("*/*.txt"))]
     for package in WINDOWS_BINDINGS:
         installed = distribution(package)
         for resource in installed.files or ():
             if (resource.parts[0].endswith(".dist-info")
-                    and resource.name.lower().startswith(("license", "copying", "notice"))):
+                    and resource.name.lower().startswith(("license", "copying", "notice", "authors"))):
                 source = Path(installed.locate_file(resource))
                 target = Path("licenses", "windows", package, *resource.parts[1:])
                 if source.is_file():

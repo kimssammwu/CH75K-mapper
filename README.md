@@ -20,7 +20,7 @@
 GitHub CLI로 `SHA256SUMS`의 서명과 빌드 출처를 확인합니다. `v0.1.0`은 내려받은 릴리스의 태그로 바꿉니다. 같은 명령에서 `SHA256SUMS` 대신 패키지 이름을 지정해 패키지를 직접 검증할 수도 있습니다. [GitHub 증명 검증 안내](https://cli.github.com/manual/gh_attestation_verify)
 
 ```sh
-gh attestation verify SHA256SUMS --repo kimssammwu/CH75K-mapper --source-ref refs/tags/v0.1.0 --deny-self-hosted-runners
+gh attestation verify SHA256SUMS --repo kimssammwu/CH75K-mapper --signer-workflow kimssammwu/CH75K-mapper/.github/workflows/build.yml --source-ref refs/tags/v0.1.0 --deny-self-hosted-runners
 ```
 
 패키지의 SHA-256을 계산해 `SHA256SUMS`에서 같은 파일 이름의 값과 비교합니다.

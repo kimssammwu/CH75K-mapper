@@ -106,7 +106,9 @@ class NativeTests(unittest.TestCase):
             backup = ch75k._persist_backup(self.device, BASE, changes)
             entries = json.loads(backup.read_text())["blocks"]
             self.assertEqual(bytes.fromhex(entries[0]["before"]), changes[0].before)
-            self.assertEqual(backup.stat().st_mode & 0o777, 0o600)
+            # Windows inherits the user profile's ACL and does not expose POSIX mode bits.
+            if os.name != "nt":
+                self.assertEqual(backup.stat().st_mode & 0o777, 0o600)
             ch75k._write_and_verify(link, BASE, changes, backup)
 
     def test_golden_keyboard_macro(self):

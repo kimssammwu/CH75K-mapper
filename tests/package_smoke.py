@@ -99,7 +99,11 @@ def smoke_archive(archive: Path):
                 contents.extractall(extracted)
             package = extracted / archive.name.removesuffix("-portable.zip")
             executable = package / "CH75K.exe"
-            check_release_files(executable, package, (*RELEASE_FILES, "licenses/windows/pywebview/licenses/LICENSE"))
+            check_release_files(executable, package, (
+                *RELEASE_FILES, "licenses/windows/pywebview/licenses/LICENSE",
+                "licenses/windows/proxy-tools/LICENSE.txt", "licenses/windows/webview2-sdk/LICENSE.txt",
+                "licenses/windows/webview2-sdk/NOTICE.txt",
+            ))
             other_locations = [package / name for name in ("_internal", "mapper.html")]
             if any(path.exists() for path in other_locations):
                 raise RuntimeError("The Windows package must bundle its dependencies and mapper inside CH75K.exe.")
