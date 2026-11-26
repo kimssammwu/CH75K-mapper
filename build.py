@@ -22,9 +22,10 @@ from zipfile import ZIP_DEFLATED, ZipFile
 SOURCE = Path(__file__).resolve().parent
 APP_NAME = "CH75K"
 BUNDLE_ID = "local.ch75k.mapper"
+APP_ICON = SOURCE / "assets" / "app-icon"
 MAC_ARCHITECTURES = ("arm64", "x86_64", "universal2")
 RELEASE_DOCUMENTS = ("README.md", "PUBLICATION.md", "LICENSE", "NOTICE",
-                     "THIRD_PARTY_NOTICES.md", "ui/anatomy/LICENSE")
+                     "THIRD_PARTY_NOTICES.md", "ui/anatomy/LICENSE", "assets/app-icon.svg")
 WINDOWS_BINDINGS = ("pywebview", "pythonnet", "clr-loader", "cffi", "pycparser",
                     "bottle", "proxy-tools", "typing-extensions")
 
@@ -58,11 +59,11 @@ def windows_binding_notices() -> list[tuple[Path, Path]]:
     return notices
 
 
-def copy_linux_library_notices(analysis_toc: Path, bundle: Path):
+def linux_library_notices(analysis_toc: Path) -> list[tuple[Path, Path]]:
     """Collect available Debian copyright files for bundled native libraries."""
     package_query = shutil.which("dpkg-query")
     if not package_query:
-        return
+        return []
     from PyInstaller.building.build_main import Analysis
 
     # The pinned PyInstaller saves the original library paths in its analysis TOC.
@@ -90,19 +91,20 @@ def copy_linux_library_notices(analysis_toc: Path, bundle: Path):
             if separator and owned_path in libraries:
                 packages.update(owner.split(":", 1)[0] for owner in owners.split(", "))
     common = Path("/usr/share/common-licenses")
+    notices = []
     for package in sorted(packages):
         if not re.fullmatch(r"[a-z0-9][a-z0-9.+-]*", package):
             continue
         notice = Path("/usr/share/doc") / package / "copyright"
         if not notice.is_file():
             continue
-        target = bundle / "licenses" / "linux" / package
-        target.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(notice, target / "copyright")
-        for name in set(re.findall(r"/usr/share/common-licenses/([A-Za-z0-9.+-]+)",
-                                   notice.read_text(encoding="utf-8", errors="replace"))):
+        target = Path("licenses", "linux", package)
+        notices.append((notice, target / "copyright"))
+        for name in sorted(set(re.findall(r"/usr/share/common-licenses/([A-Za-z0-9.+-]+)",
+                                         notice.read_text(encoding="utf-8", errors="replace")))):
             if (common / name).is_file():
-                shutil.copy2(common / name, target / name)
+                notices.append((common / name, target / name))
+    return notices
 
 
 def build_args(stage: Path, system: str, target_arch: str | None,
@@ -118,21 +120,26 @@ def build_args(stage: Path, system: str, target_arch: str | None,
         "--add-data", f"{SOURCE / 'mapper.html'}:.",
     ]
     if is_mac:
-        command.extend(("--windowed", "--osx-bundle-identifier", BUNDLE_ID))
+        command.extend(("--windowed", "--osx-bundle-identifier", BUNDLE_ID,
+                        "--icon", str(APP_ICON.with_suffix(".icns")),
+                        "--add-data", f"{APP_ICON.with_suffix('.png')}:assets"))
         if target_arch:
             command.extend(("--target-arch", target_arch))
         if signing_identity:
             command.extend(("--codesign-identity", signing_identity))
-        # Put notices in the bundle before PyInstaller signs it.
-        for path, relative in documents:
-            command.extend(("--add-data", f"{path}:{relative.parent.as_posix()}"))
     elif system == "Windows":
-        command.extend(("--windowed", "--collect-data", "webview"))
+        icon = APP_ICON.with_suffix(".ico")
+        command.extend(("--windowed", "--collect-data", "webview",
+                        "--icon", str(icon), "--add-data", f"{icon}:assets"))
+    else:
+        command.extend(("--add-data", f"{APP_ICON.with_suffix('.png')}:assets"))
+    for path, relative in documents:
+        command.extend(("--add-data", f"{path}:{relative.parent.as_posix()}"))
     command.append(str(SOURCE / "desktop_app.py"))
     return command
 
 
-def build(output: Path, *, archive: bool = False, target_arch: str | None = None,
+def build(output: Path, *, archive: bool = False, standalone: bool = False, target_arch: str | None = None,
           signing_identity: str | None = None) -> tuple[Path, ...]:
     system = platform.system()
     if system not in ("Linux", "Darwin", "Windows"):
@@ -155,9 +162,10 @@ def build(output: Path, *, archive: bool = False, target_arch: str | None = None
     bundle_name = application_name if is_mac else release + (".exe" if is_windows else "")
     archive_name = release + {"Darwin": ".zip", "Linux": "-portable.tar.gz",
                               "Windows": "-portable.zip"}[system]
-    targets = [output / bundle_name]
-    if archive:
-        targets.append(output / archive_name)
+    bundle_target = output / bundle_name
+    archive_target = output / archive_name if archive else None
+    disk_image_target = output / f"{release}.dmg" if is_mac and standalone else None
+    targets = tuple(target for target in (bundle_target, archive_target, disk_image_target) if target is not None)
     for existing in targets:
         if existing.exists() or existing.is_symlink():
             raise ValueError(f"이미 빌드 결과가 있습니다. 새 출력 폴더를 지정하세요. {existing}")
@@ -166,8 +174,22 @@ def build(output: Path, *, archive: bool = False, target_arch: str | None = None
     with tempfile.TemporaryDirectory(prefix=".ch75k-build-", dir=output) as temporary:
         stage = Path(temporary).resolve()
         documents = release_documents()
-        subprocess.run(build_args(stage, system, target_arch, signing_identity, documents),
+        if is_windows and (archive or standalone):
+            documents.extend(windows_binding_notices())
+        if system == "Linux" and (archive or standalone):
+            rule = Path("70-ch75k-native.rules")
+            documents.append((SOURCE / rule, rule))
+        bundled_documents = documents if is_mac or standalone else []
+        subprocess.run(build_args(stage, system, target_arch, signing_identity, bundled_documents),
                        cwd=SOURCE, check=True)
+        if system == "Linux" and (archive or standalone):
+            notices = linux_library_notices(stage / "work" / APP_NAME / "Analysis-00.toc")
+            documents.extend(notices)
+            if standalone and notices:
+                # PyInstaller identifies the exact bundled libraries during analysis.
+                # Run it again with their notices embedded in the standalone file.
+                subprocess.run(build_args(stage, system, target_arch, signing_identity, documents),
+                               cwd=SOURCE, check=True)
         source = stage / "dist" / application_name
         executable = source / "Contents" / "MacOS" / APP_NAME if is_mac else source
         if not executable.is_file():
@@ -176,39 +198,49 @@ def build(output: Path, *, archive: bool = False, target_arch: str | None = None
             subprocess.run(["/usr/bin/codesign", "--verify", "--deep", "--strict", str(source)],
                            check=True)
 
-        if archive:
-            bundle_archive = stage / archive_name
+        if archive_target:
+            bundle_archive = stage / archive_target.name
             if is_mac:
                 subprocess.run(["/usr/bin/ditto", "-c", "-k", "--sequesterRsrc", "--keepParent",
                                 str(source), str(bundle_archive)], check=True)
             elif is_windows:
                 with ZipFile(bundle_archive, "w", compression=ZIP_DEFLATED) as package:
-                    for path, relative in documents + windows_binding_notices():
+                    for path, relative in documents:
                         package.write(path, arcname=f"{release}/{relative.as_posix()}")
                     package.write(executable, arcname=f"{release}/{application_name}")
             else:
                 contents = stage / "archive"
-                linux_rule = Path("70-ch75k-native.rules")
-                for path, relative in (*documents, (SOURCE / linux_rule, linux_rule)):
+                for path, relative in documents:
                     destination = contents / relative
                     destination.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(path, destination)
-                copy_linux_library_notices(stage / "work" / APP_NAME / "Analysis-00.toc", contents)
                 with tarfile.open(bundle_archive, "w:gz") as package:
                     package.add(contents, arcname=bundle_name)
                     package.add(executable, arcname=f"{bundle_name}/{APP_NAME}")
-        source.rename(targets[0])
-        if archive:
-            bundle_archive.rename(targets[1])
-    return tuple(targets)
+        if disk_image_target:
+            contents = stage / "disk-image"
+            contents.mkdir()
+            source = source.rename(contents / application_name)
+            (contents / "Applications").symlink_to("/Applications", target_is_directory=True)
+            disk_image = stage / disk_image_target.name
+            subprocess.run(["/usr/bin/hdiutil", "create", "-srcfolder", str(contents),
+                            "-fs", "HFS+", "-format", "UDRO", "-volname", "CH75K Studio",
+                            str(disk_image)], check=True)
+            disk_image.rename(disk_image_target)
+        source.rename(bundle_target)
+        if archive_target:
+            bundle_archive.rename(archive_target)
+    return targets
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="이 OS에서 실행되는 CH75K 매퍼를 빌드합니다.")
+    parser = argparse.ArgumentParser(description="이 OS에서 실행되는 CH75K Studio를 빌드합니다.")
     parser.add_argument("--output", type=Path, default=Path("dist"),
                         help="출력 폴더, 기본값 dist")
     parser.add_argument("--archive", action="store_true",
                         help="공유용 ZIP(macOS, Windows) 또는 tar.gz(Linux)도 생성")
+    parser.add_argument("--standalone", action="store_true",
+                        help="단일 배포 파일 생성 (macOS는 DMG, Linux와 Windows는 실행 파일)")
     parser.add_argument("--target-arch", choices=MAC_ARCHITECTURES,
                         help="macOS 아키텍처. 생략하면 실행 중인 Python을 따릅니다.")
     parser.add_argument("--signing-identity",
@@ -216,6 +248,7 @@ def main() -> int:
     args = parser.parse_args()
     try:
         results = build(args.output.expanduser().resolve(), archive=args.archive,
+                        standalone=args.standalone,
                         target_arch=args.target_arch, signing_identity=args.signing_identity)
     except (OSError, ValueError, subprocess.CalledProcessError) as error:
         print(error, file=sys.stderr)

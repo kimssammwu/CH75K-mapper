@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 from contextlib import suppress
+from dataclasses import dataclass
 from datetime import datetime
 import errno
 import json
@@ -16,7 +17,7 @@ from hid_common import COMPANION_PAGE, CONFIG_PAGE, HidrawError
 from protocol import BLOCK_SIZE, PROFILE_POINTER, REPORT_ID, ProtocolError, SettingsLink
 from settings import (
     BUTTONS, DIRECT_ACTIONS, MACRO_END, MACRO_TRIGGERS, PROFILE_PREFIX,
-    Change, parse_profile, plan_changes, profile_base, verify_matrix,
+    Change, macro_storage_end, parse_profile, plan_changes, profile_base, verify_matrix,
 )
 
 if sys.platform == "darwin":
@@ -73,14 +74,33 @@ def _read_span(link: SettingsLink, address: int, count: int) -> bytes:
                     for i in range(0, count, BLOCK_SIZE))
 
 
-def _snapshot(link: SettingsLink, include_macros: bool) -> tuple[int, bytes]:
+def _snapshot(link: SettingsLink, include_macros: bool, *, reserve: int = 0,
+              minimum_size: int = 0) -> tuple[int, bytes]:
     base = profile_base(link.read_block(PROFILE_POINTER))
     data = _read_span(link, base, PROFILE_PREFIX)
     verify_matrix(data)
     if include_macros:
         tail = base + len(data)
-        data += _read_span(link, tail, MACRO_END - tail)
+        # An edit can append at most the total size of its macro bodies. Only
+        # read that much free space, so the planner can inspect the live bytes.
+        end = min(MACRO_END, max(base + minimum_size, macro_storage_end(base, data) + reserve))
+        data += _read_span(link, tail, end - tail)
     return base, data
+
+
+@dataclass(frozen=True)
+class DeviceSnapshot:
+    device: Device
+    base: int
+    image: bytes
+
+
+def capture_profile(selector: str | Device) -> DeviceSnapshot:
+    """Read the profile and allocated macros without saving changes."""
+    device = selector if isinstance(selector, Device) else select_device(selector)
+    with Hidraw(device) as hid:
+        base, image = _snapshot(SettingsLink(hid, device.feature_sizes[REPORT_ID]), True)
+    return DeviceSnapshot(device, base, image)
 
 
 def read_profile(selector: str | Device | None) -> str:
@@ -179,15 +199,23 @@ def _write_and_verify(link: SettingsLink, base: int, changes: list[Change], back
             f"저장과 읽기 검증을 마쳤지만 USB 설정 모드를 종료하지 못했습니다. 백업 {backup}\n{exc}") from exc
 
 
-def apply_profile(selector: str | Device | None, profile: dict) -> str:
+def apply_profile(selector: str | Device | None, profile: dict, *,
+                  expected: DeviceSnapshot | None = None,
+                  preserve_slots_for: frozenset[str] = frozenset()) -> str:
     keys = parse_profile(profile)
     if not keys:
         raise ValueError("변경할 버튼 설정을 입력하세요.")
     device = selector if isinstance(selector, Device) else select_device(selector)
+    if expected is not None and device != expected.device:
+        raise ProtocolError("비교한 장치와 다릅니다. 설정을 다시 비교해 주세요.")
     with Hidraw(device) as hid:
         link = SettingsLink(hid, device.feature_sizes[REPORT_ID])
-        base, original = _snapshot(link, any(action.key is None for action in keys.values()))
-        changes = plan_changes(base, original, keys)
+        reserve = sum(len(action.body) for action in keys.values())
+        base, original = _snapshot(link, expected is not None or reserve > 0, reserve=reserve,
+                                   minimum_size=len(expected.image) if expected else 0)
+        if expected is not None and (base != expected.base or original[:len(expected.image)] != expected.image):
+            raise ProtocolError("비교한 뒤 장치 설정이 바뀌었습니다. 다시 비교해 주세요.")
+        changes = plan_changes(base, original, keys, preserve_slots_for=preserve_slots_for)
         if not changes:
             return "현재 장치에 같은 설정이 저장되어 있습니다."
         backup = _persist_backup(device, base, changes)
@@ -232,7 +260,7 @@ def main(argv: list[str] | None = None) -> int:
         print(str(exc), file=sys.stderr)
         return 1
     except ImportError as exc:
-        print(f"CH75K 매퍼를 열지 못했습니다. {exc}", file=sys.stderr)
+        print(f"CH75K Studio를 열지 못했습니다. {exc}", file=sys.stderr)
         return 1
     return 0
 

@@ -72,7 +72,10 @@ class WindowsWindowTests(unittest.TestCase):
         poll = Mock(side_effect=[([(1, {"message": "연결"})], False), ([], True)])
 
         def run_gui(**options):
-            self.assertEqual(options, {"gui": "edgechromium", "http_server": False, "private_mode": True})
+            self.assertEqual(options, {
+                "gui": "edgechromium", "http_server": False, "private_mode": True,
+                "icon": str(PAGE.parent / "assets" / "app-icon.ico"),
+            })
             self.before_show.fire()
             self.assertFalse(self.view.AllowExternalDrop)
 

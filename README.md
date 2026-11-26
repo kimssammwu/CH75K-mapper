@@ -1,4 +1,6 @@
-# CH75K 매퍼
+# CH75K Studio
+
+<img src="assets/app-icon.svg" width="80" height="80" alt="CH75K 로고">
 
 아이노트 CH75K와 호환되는 데스크톱 설정 도구입니다. Windows, macOS, Linux에서 앱에 내장된 웹뷰가 같은 3D 편집기를 표시합니다. 편집기는 Python과 직접 메시지를 주고받으므로 로컬 서버나 포트가 필요 없습니다. Windows HID, macOS IOKit, Linux `hidraw`로 키패드의 내장 설정을 읽고 씁니다.
 
@@ -10,10 +12,10 @@
 
 | 대상 | 다운로드 파일 |
 | --- | --- |
-| Linux x86_64 | `CH75K-Linux-x86_64-portable.tar.gz` |
-| macOS Apple Silicon | `CH75K-macOS-arm64.zip` |
-| macOS Intel | `CH75K-macOS-x86_64.zip` |
-| Windows x86_64 | `CH75K-Windows-x86_64-portable.zip` |
+| Linux x86_64 | `CH75K-Linux-x86_64` |
+| macOS Apple Silicon | `CH75K-macOS-arm64.dmg` |
+| macOS Intel | `CH75K-macOS-x86_64.dmg` |
+| Windows x86_64 | `CH75K-Windows-x86_64.exe` |
 
 ### 다운로드 검증
 
@@ -25,18 +27,18 @@ gh attestation verify SHA256SUMS --repo kimssammwu/CH75K-mapper --signer-workflo
 
 패키지의 SHA-256을 계산해 `SHA256SUMS`에서 같은 파일 이름의 값과 비교합니다.
 
-- Linux는 `sha256sum CH75K-Linux-x86_64-portable.tar.gz`를 실행합니다.
-- macOS는 `shasum -a 256 CH75K-macOS-arm64.zip`을 실행합니다. Intel은 파일 이름을 바꿉니다.
-- Windows PowerShell에서는 `Get-FileHash -Algorithm SHA256 .\CH75K-Windows-x86_64-portable.zip`을 실행합니다.
+- Linux는 `sha256sum CH75K-Linux-x86_64`를 실행합니다.
+- macOS는 `shasum -a 256 CH75K-macOS-arm64.dmg`로 확인합니다. Intel은 파일 이름을 바꿉니다.
+- Windows PowerShell에서는 `Get-FileHash -Algorithm SHA256 .\CH75K-Windows-x86_64.exe`로 확인합니다.
 
 ## 실행
 
-- **Linux**는 tar.gz에서 `CH75K`를 꺼내 그 파일만 실행하면 됩니다. 파일을 다른 폴더에 옮겨도 동작합니다. 권한 규칙과 사용 안내도 압축에 들어 있습니다.
-- **macOS**는 ZIP을 풀고 `CH75K.app`을 엽니다. 배포용 Developer ID 서명과 Apple 공증은 별도 단계입니다. [Apple 공증 안내](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution)
-- **Windows**는 ZIP을 풀고 `CH75K.exe`를 엽니다. Windows 10 또는 11 x64와 Microsoft Edge WebView2 Runtime이 필요합니다. [Microsoft WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/#download)
+- **Linux**는 다운로드한 파일에 `chmod +x CH75K-Linux-x86_64`를 실행하고, 같은 폴더에서 `./CH75K-Linux-x86_64`로 엽니다. 첫 실행 때 현재 사용자용 앱 항목과 아이콘이 등록됩니다. 파일을 옮긴 뒤 새 위치에서 한 번 실행하면 등록 경로도 갱신됩니다.
+- **macOS**는 DMG를 열고 `CH75K.app`을 응용 프로그램 폴더에 복사한 뒤 실행합니다. 배포용 Developer ID 서명과 Apple 공증은 별도 단계입니다. [Apple 공증 안내](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution)
+- **Windows**는 다운로드한 `CH75K-Windows-x86_64.exe`를 엽니다. Windows 10 또는 11 x64와 Microsoft Edge WebView2 Runtime이 필요합니다. [Microsoft WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/#download)
 - **소스**는 Python 3.10 이상에서 `python3 desktop_app.py`로 실행합니다.
 
-실행하면 **CH75K 매퍼** 창이 열립니다. 확인을 마치면 창을 닫거나 화면 상단의 **종료**를 누릅니다.
+실행하면 **CH75K Studio** 창이 열립니다. 확인을 마치면 창을 닫거나 화면 상단의 **종료**를 누릅니다.
 
 Linux는 시스템의 GTK 3와 WebKitGTK 4.1 또는 4.0을 사용합니다. Ubuntu에서 런타임이 없다고 표시되면 `sudo apt install libwebkit2gtk-4.1-0`으로 설치할 수 있습니다. [Ubuntu WebKitGTK 패키지](https://packages.ubuntu.com/jammy/libs/libwebkit2gtk-4.1-0)
 
@@ -49,7 +51,7 @@ Linux 단일 파일은 실행할 때 내부 파일을 실행 가능한 임시 �
 ```sh
 python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements-build.txt
-.venv/bin/python build.py --output dist --archive
+.venv/bin/python build.py --output dist --standalone
 ```
 
 Windows에서는 PowerShell로 실행합니다.
@@ -57,10 +59,10 @@ Windows에서는 PowerShell로 실행합니다.
 ```powershell
 py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements-build.txt -r requirements-windows.txt
-.\.venv\Scripts\python.exe build.py --output dist --archive
+.\.venv\Scripts\python.exe build.py --output dist --standalone
 ```
 
-Linux는 단일 실행 파일과 tar.gz를, macOS는 `CH75K.app`과 ZIP을, Windows는 단일 EXE와 ZIP을 `dist/`에 생성합니다.
+Linux와 Windows는 단일 실행 파일을, macOS는 `CH75K.app`과 배포용 DMG를 `dist/`에 생성합니다. 압축 패키지가 필요한 경우 `--archive`로 빌드합니다.
 
 앱 빌드는 포함된 `mapper.html`을 사용합니다. 3D 화면을 수정한 뒤 다시 만들려면 Node.js 20 이상에서 `node ui/build.mjs`를 실행합니다. [공개 범위와 라이선스 검토](PUBLICATION.md) · [제3자 고지](THIRD_PARTY_NOTICES.md)
 
@@ -76,6 +78,8 @@ Linux는 단일 실행 파일과 tar.gz를, macOS는 `CH75K.app`과 ZIP을, Wind
 
 키보드 없이도 프로필을 편집하고 미리 볼 수 있습니다. 연결된 키보드의 설정을 읽거나 적용하려면 앱에서 USB 장치를 선택하고 모델을 확인합니다.
 
+모델을 확인하면 CH75K에 저장된 설정과 편집 중인 설정을 비교합니다. 차이가 있으면 팝업에서 키별 값을 확인한 뒤 **장치 설정 불러오기**, **편집 설정을 장치에 쓰기**, **나중에** 중에서 고릅니다. 불러오기는 편집기가 읽을 수 있는 키만 업데이트합니다. 장치에 쓰기는 편집값을 지정한 차이만 저장하며, 기존 설정을 백업하고 다시 읽어 확인합니다. 비교한 뒤 장치 설정이 바뀌었다면 다시 비교해야 합니다.
+
 버튼에는 `F13`, `Ctrl+C`, `Ctrl+K, @120, Ctrl+C`처럼 입력합니다. 쉼표는 동작을 잇고, `@120`은 대기 시간을 밀리초로 지정합니다. `Ctrl+K@120`처럼 키를 놓은 뒤의 대기 시간도 지정할 수 있습니다. 실제 저장은 제조사 앱처럼 약 8ms 단위입니다.
 
 반복 매크로와 미디어·시스템 프로필은 입체 매핑 화면과 터미널에서 적용할 수 있습니다.
@@ -86,9 +90,9 @@ macOS와 Windows에서는 앱을 일반 사용자로 실행합니다. Windows에
 
 ### Linux
 
-장치를 선택하고 **CH75K 모델 확인**을 누른 뒤 **장치에서 읽기** 또는 **장치에 적용**을 실행합니다. USB에 접근할 권한이 부족하면 앱이 시스템 인증 창을 엽니다. 승인하면 CH75K용 udev 규칙을 등록하고 원래 작업을 한 번 다시 시도합니다.
+장치를 선택하고 **CH75K 모델 확인**을 누릅니다. **장치에서 읽기** 또는 **장치에 적용**으로도 다시 비교할 수 있습니다. USB에 접근할 권한이 부족하면 앱이 시스템 인증 창을 엽니다. 승인하면 CH75K용 udev 규칙을 등록하고 원래 작업을 한 번 다시 시도합니다.
 
-인증 창을 사용할 수 없는 Linux 환경에서는, 이 폴더에서 관리자 권한으로 같은 규칙을 등록한 뒤 CH75K를 다시 연결합니다.
+인증 창을 사용할 수 없는 Linux 환경에서는 [udev 규칙](70-ch75k-native.rules)을 내려받습니다. 그 파일이 있는 폴더에서 관리자 권한으로 규칙을 등록한 뒤 CH75K를 다시 연결합니다.
 
 ```sh
 sudo install -m 0644 70-ch75k-native.rules /etc/udev/rules.d/70-ch75k-native.rules
@@ -130,4 +134,4 @@ python3 ch75k.py apply profile.json --confirm-ch75k
 
 USB ID를 다른 모델도 사용하므로, 앱은 제조사 CH75K의 설정 헤더와 6버튼 매트릭스가 맞는 장치에만 씁니다. 알려진 프로필이 없는 초기 장치나 다른 펌웨어는 설정 쓰기가 거부될 수 있습니다. 기존 매크로를 보존할 빈 공간을 확인하지 못한 경우에도 쓰지 않습니다.
 
-GitHub Actions에서 패키지를 풀어 앱 창, 장치 조회, 매크로 미리 보기와 종료를 검사합니다. 실제 키패드에서 동작하는 매크로와 장치 접근은 별도 연결 시험이 필요합니다. 백업은 Linux에서 `${XDG_STATE_HOME:-~/.local/state}/ch75k-native/backups`, macOS에서 `~/Library/Application Support/ch75k-native/backups`, Windows에서 `%LOCALAPPDATA%\ch75k-native\backups`에 남습니다. `XDG_STATE_HOME`을 지정하면 백업 루트가 바뀝니다.
+GitHub Actions에서 단일 파일을 열어 앱 창, 장치 조회, 매크로 미리 보기와 종료를 검사합니다. macOS는 DMG를 열어 앱 서명도 확인합니다. 실제 키패드에서 동작하는 매크로와 장치 접근은 별도 연결 시험이 필요합니다. 백업은 Linux에서 `${XDG_STATE_HOME:-~/.local/state}/ch75k-native/backups`, macOS에서 `~/Library/Application Support/ch75k-native/backups`, Windows에서 `%LOCALAPPDATA%\ch75k-native\backups`에 남습니다. `XDG_STATE_HOME`을 지정하면 백업 루트가 바뀝니다.

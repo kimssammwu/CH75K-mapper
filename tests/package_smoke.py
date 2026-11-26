@@ -18,7 +18,11 @@ from zipfile import ZipFile
 
 RELEASE_FILES = (
     "README.md", "PUBLICATION.md", "THIRD_PARTY_NOTICES.md",
-    "ui/anatomy/LICENSE",
+    "ui/anatomy/LICENSE", "assets/app-icon.svg",
+)
+WINDOWS_NOTICE_FILES = (
+    "licenses/windows/pywebview/licenses/LICENSE", "licenses/windows/proxy-tools/LICENSE.txt",
+    "licenses/windows/webview2-sdk/LICENSE.txt", "licenses/windows/webview2-sdk/NOTICE.txt",
 )
 PYTHON_LICENSES = ("LICENSE.txt", "copyright")
 SUCCESS_MARKER = "CH75K_PORTLESS_SMOKE_OK"
@@ -91,6 +95,76 @@ def check_release_files(executable: Path, documentation: Path, required_files: t
         raise RuntimeError(f"Missing Python runtime license under {documentation / 'licenses' / 'python'}")
 
 
+def smoke_isolated_executable(executable: Path):
+    with tempfile.TemporaryDirectory(prefix="ch75k-onefile-check-") as folder:
+        workspace = Path(folder)
+        isolated = workspace / "isolated"
+        isolated.mkdir()
+        standalone = isolated / executable.name
+        shutil.copy2(executable, standalone)
+        smoke(standalone, cwd=workspace)
+
+
+def check_macos_app(application: Path) -> Path:
+    executable = application / "Contents/MacOS/CH75K"
+    check_release_files(executable, application / "Contents/Resources",
+                        (*RELEASE_FILES, "mapper.html", "app-icon.icns", "assets/app-icon.png"))
+    with (application / "Contents/Info.plist").open("rb") as info:
+        bundle = plistlib.load(info)
+    if bundle.get("NSAppTransportSecurity"):
+        raise RuntimeError("CH75K.app contains a network security exception.")
+    if bundle.get("CFBundleIconFile") != "app-icon.icns":
+        raise RuntimeError("CH75K.app does not use the packaged application icon.")
+    subprocess.run(["/usr/bin/codesign", "--verify", "--deep", "--strict", str(application)], check=True)
+    return executable
+
+
+def smoke_disk_image(image: Path):
+    architecture = image.stem.removeprefix("CH75K-macOS-")
+    expected = {"arm64", "x86_64"} if architecture == "universal2" else {architecture}
+    hdiutil = "/usr/bin/hdiutil"
+    subprocess.run([hdiutil, "verify", str(image)], check=True)
+    with tempfile.TemporaryDirectory(prefix="ch75k-disk-image-check-") as folder:
+        mount = Path(folder) / "mounted"
+        mount.mkdir()
+        subprocess.run([hdiutil, "attach", "-readonly", "-nobrowse", "-noautoopen",
+                        "-mountpoint", str(mount), str(image)], check=True)
+        try:
+            executable = check_macos_app(mount / "CH75K.app")
+            architectures = subprocess.check_output(
+                ["/usr/bin/lipo", "-archs", str(executable)], text=True).split()
+            if set(architectures) != expected:
+                raise RuntimeError(f"Expected {sorted(expected)}, found {architectures} in {image.name}.")
+            smoke(executable, cwd=Path(folder))
+        finally:
+            if subprocess.run([hdiutil, "detach", str(mount)]).returncode:
+                subprocess.run([hdiutil, "detach", "-force", str(mount)], check=True)
+
+
+def smoke_standalone(artifact: Path):
+    artifact = artifact.resolve(strict=True)
+    if artifact.suffix == ".dmg":
+        smoke_disk_image(artifact)
+        return
+
+    from PyInstaller.archive.readers import CArchiveReader
+
+    required = (
+        (*RELEASE_FILES, *WINDOWS_NOTICE_FILES, "assets/app-icon.ico")
+        if artifact.suffix == ".exe"
+        else (*RELEASE_FILES, "70-ch75k-native.rules", "assets/app-icon.png")
+    )
+    archive = CArchiveReader(str(artifact))
+    names = {name.replace("\\", "/"): name for name in archive.toc}
+    for name in (*required, "mapper.html"):
+        if name not in names or not archive.extract(names[name]):
+            raise RuntimeError(f"Missing or empty embedded release file {name} in {artifact.name}.")
+    if not any((key := f"licenses/python/{name}") in names and archive.extract(names[key])
+               for name in PYTHON_LICENSES):
+        raise RuntimeError(f"Missing embedded Python runtime license in {artifact.name}.")
+    smoke_isolated_executable(artifact)
+
+
 def smoke_archive(archive: Path):
     archive = archive.resolve(strict=True)
     with tempfile.TemporaryDirectory(prefix="ch75k-package-check-") as temporary_directory:
@@ -102,19 +176,11 @@ def smoke_archive(archive: Path):
                 contents.extractall(extracted)
             package = extracted / archive.name.removesuffix("-portable.zip")
             executable = package / "CH75K.exe"
-            check_release_files(executable, package, (
-                *RELEASE_FILES, "licenses/windows/pywebview/licenses/LICENSE",
-                "licenses/windows/proxy-tools/LICENSE.txt", "licenses/windows/webview2-sdk/LICENSE.txt",
-                "licenses/windows/webview2-sdk/NOTICE.txt",
-            ))
+            check_release_files(executable, package, (*RELEASE_FILES, *WINDOWS_NOTICE_FILES))
             other_locations = [package / name for name in ("_internal", "mapper.html")]
             if any(path.exists() for path in other_locations):
                 raise RuntimeError("The Windows package must bundle its dependencies and mapper inside CH75K.exe.")
-            isolated = workspace / "isolated"
-            isolated.mkdir()
-            standalone = isolated / executable.name
-            shutil.copy2(executable, standalone)
-            smoke(standalone, cwd=workspace)
+            smoke_isolated_executable(executable)
         elif archive.name.endswith("-portable.tar.gz"):
             with tarfile.open(archive, "r:gz") as contents:
                 contents.extractall(extracted, filter="data")
@@ -125,23 +191,10 @@ def smoke_archive(archive: Path):
                 raise RuntimeError("The Linux package contains a PyInstaller dependency directory.")
             if (package / "mapper.html").exists():
                 raise RuntimeError("The Linux package must bundle mapper.html inside the executable.")
-            isolated = workspace / "isolated"
-            isolated.mkdir()
-            unrelated_cwd = workspace / "working-directory"
-            unrelated_cwd.mkdir()
-            standalone = isolated / "CH75K"
-            shutil.copy2(executable, standalone)
-            smoke(standalone, cwd=unrelated_cwd)
+            smoke_isolated_executable(executable)
         elif archive.suffix == ".zip":
             subprocess.run(["/usr/bin/ditto", "-x", "-k", str(archive), str(extracted)], check=True)
-            application = extracted / "CH75K.app"
-            executable = application / "Contents/MacOS/CH75K"
-            check_release_files(executable, application / "Contents/Resources", (*RELEASE_FILES, "mapper.html"))
-            with (application / "Contents/Info.plist").open("rb") as info:
-                if plistlib.load(info).get("NSAppTransportSecurity"):
-                    raise RuntimeError("CH75K.app contains a network security exception.")
-            subprocess.run(["/usr/bin/codesign", "--verify", "--deep", "--strict", str(application)], check=True)
-            smoke(executable)
+            smoke(check_macos_app(extracted / "CH75K.app"))
         else:
             raise ValueError(f"Unsupported release archive: {archive.name}")
 
@@ -151,10 +204,13 @@ def main():
     target = parser.add_mutually_exclusive_group(required=True)
     target.add_argument("executable", nargs="?", type=Path)
     target.add_argument("--archive", type=Path)
+    target.add_argument("--standalone", type=Path, help="Verify a published executable or macOS disk image.")
     parser.add_argument("--desktop", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
     if args.archive:
         smoke_archive(args.archive)
+    elif args.standalone:
+        smoke_standalone(args.standalone)
     else:
         smoke(args.executable)
     print("CH75K local WebView smoke test passed.")

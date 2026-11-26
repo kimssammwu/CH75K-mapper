@@ -18,6 +18,7 @@ _INTEGER = C.c_long
 _UNSIGNED = C.c_ulong
 _CLASS_IDS = count()
 _MESSAGE_NAME = "ch75k"
+_APP_ICON = Path(__file__).resolve().with_name("assets") / "app-icon.png"
 
 
 class _Point(C.Structure):
@@ -261,7 +262,7 @@ class _Window:
     def _alert(self, message):
         alert = self.cocoa.create("NSAlert")
         try:
-            self.send(alert, "setMessageText:", None, (_ID, self.cocoa.text("CH75K")))
+            self.send(alert, "setMessageText:", None, (_ID, self.cocoa.text("CH75K Studio")))
             self.send(alert, "setInformativeText:", None, (_ID, self.cocoa.text(message)))
             self.send(alert, "runModal", _INTEGER)
         finally:
@@ -270,7 +271,7 @@ class _Window:
     def _install_menus(self):
         bar = self.cocoa.create("NSMenu")
         menus = (
-            ("CH75K", (("CH75K 종료", "closeMapper:", "q", self.delegate),)),
+            ("CH75K Studio", (("CH75K Studio 종료", "closeMapper:", "q", self.delegate),)),
             ("편집", (
                 ("실행 취소", "undo:", "z", None), ("잘라내기", "cut:", "x", None),
                 ("복사", "copy:", "c", None), ("붙여넣기", "paste:", "v", None),
@@ -294,11 +295,25 @@ class _Window:
         self.send(self.app, "setMainMenu:", None, (_ID, bar))
         self.send(bar, "release")
 
+    def _install_application_icon(self):
+        if not _APP_ICON.is_file():
+            return
+        image = self.send(
+            self.send(self.cocoa.cls("NSImage"), "alloc", _ID),
+            "initWithContentsOfFile:", _ID, (_ID, self.cocoa.text(str(_APP_ICON))),
+        )
+        if image:
+            try:
+                self.send(self.app, "setApplicationIconImage:", None, (_ID, image))
+            finally:
+                self.send(image, "release")
+
     def run(self):
         pool = self.cocoa.create("NSAutoreleasePool")
         delegate = view = window = timer = controller = None
         try:
             self.app = self.send(self.cocoa.cls("NSApplication"), "sharedApplication", _ID)
+            self._install_application_icon()
             self.send(self.app, "setActivationPolicy:", _BOOL, (_INTEGER, 0))
             delegate = self.delegate = self.cocoa.delegate((
                 ("closeMapper:", b"v@:@", self._close_window, None, (_ID,)),
@@ -338,7 +353,7 @@ class _Window:
             if not window:
                 raise RuntimeError("CH75K 창을 만들지 못했습니다.")
             self.send(window, "setReleasedWhenClosed:", None, (_BOOL, False))
-            self.send(window, "setTitle:", None, (_ID, self.cocoa.text("CH75K")))
+            self.send(window, "setTitle:", None, (_ID, self.cocoa.text("CH75K Studio")))
             self.send(window, "setDelegate:", None, (_ID, delegate))
             self.send(window, "setContentMinSize:", None, (_Size, _Size(560, 490)))
             self.send(window, "center")
@@ -403,5 +418,5 @@ def run_window(page: Path, dispatch, poll) -> None:
         raise RuntimeError("macOS의 주 스레드에서 CH75K 창을 실행해야 합니다.")
     page = page.resolve(strict=True)
     if not page.is_file():
-        raise ValueError("CH75K 매퍼 화면 파일을 찾지 못했습니다.")
+        raise ValueError("CH75K Studio 화면 파일을 찾지 못했습니다.")
     _Window(page, dispatch, poll).run()

@@ -18,13 +18,13 @@ jobs:
       matrix:
         include:
           - os: ubuntu-22.04
-            archive: dist/CH75K-Linux-x86_64-portable.tar.gz
+            asset: dist/CH75K-Linux-x86_64
           - os: macos-15
-            archive: dist/CH75K-macOS-arm64.zip
+            asset: dist/CH75K-macOS-arm64.dmg
           - os: macos-15-intel
-            archive: dist/CH75K-macOS-x86_64.zip
+            asset: dist/CH75K-macOS-x86_64.dmg
           - os: windows-2025
-            archive: dist/CH75K-Windows-x86_64-portable.zip
+            asset: dist/CH75K-Windows-x86_64.exe
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     steps:
@@ -44,7 +44,7 @@ jobs:
         if: runner.os == 'Windows'
         run: python -m pip install -r requirements-windows.txt
       - run: python -m unittest discover -s tests -v
-      - run: python build.py --output dist --archive
+      - run: python build.py --output dist --standalone
       - name: Ensure Microsoft WebView2 Runtime for the Windows smoke test
         if: runner.os == 'Windows'
         shell: pwsh
@@ -68,19 +68,19 @@ jobs:
           if ($setup.ExitCode -ne 0) {
             throw "WebView2 Runtime installation failed with exit code $($setup.ExitCode)."
           }
-      - name: Verify and run the packaged archive
+      - name: Verify and run the standalone build
         shell: bash
         env:
-          BUILD_ARCHIVE: ${{ matrix.archive }}
+          BUILD_ASSET: ${{ matrix.asset }}
         run: |
           if [ "$RUNNER_OS" = "Linux" ]; then
-            GDK_BACKEND=x11 xvfb-run -a python tests/package_smoke.py --archive "$BUILD_ARCHIVE"
+            GDK_BACKEND=x11 xvfb-run -a python tests/package_smoke.py --standalone "$BUILD_ASSET"
           else
-            python tests/package_smoke.py --archive "$BUILD_ARCHIVE"
+            python tests/package_smoke.py --standalone "$BUILD_ASSET"
           fi
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          path: ${{ matrix.archive }}
+          path: ${{ matrix.asset }}
           archive: false
           if-no-files-found: error
 
@@ -118,19 +118,19 @@ jobs:
         working-directory: release-assets
         shell: bash
         run: |
-          packages=(
-            CH75K-Linux-x86_64-portable.tar.gz
-            CH75K-Windows-x86_64-portable.zip
-            CH75K-macOS-arm64.zip
-            CH75K-macOS-x86_64.zip
+          assets=(
+            CH75K-Linux-x86_64
+            CH75K-Windows-x86_64.exe
+            CH75K-macOS-arm64.dmg
+            CH75K-macOS-x86_64.dmg
           )
-          cmp <(printf '%s\n' "${packages[@]}" | LC_ALL=C sort) \
+          cmp <(printf '%s\n' "${assets[@]}" | LC_ALL=C sort) \
               <(find . -mindepth 1 -maxdepth 1 -printf '%f\n' | LC_ALL=C sort)
-          for package in "${packages[@]}"; do
-            [[ -f "$package" && -s "$package" && ! -L "$package" ]]
+          for asset in "${assets[@]}"; do
+            [[ -f "$asset" && -s "$asset" && ! -L "$asset" ]]
           done
-          sha256sum -- "${packages[@]}" > SHA256SUMS
-      - name: Sign build provenance for the packages and checksums
+          sha256sum -- "${assets[@]}" > SHA256SUMS
+      - name: Sign build provenance for the assets and checksums
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: |
@@ -156,19 +156,22 @@ jobs:
           [[ "$tagged_commit" == "$(git rev-parse "$GITHUB_SHA^{commit}")" ]]
 
           gh release create "$GITHUB_REF_NAME" CH75K-* SHA256SUMS \
-            --repo "$GITHUB_REPOSITORY" --verify-tag --title "CH75K $GITHUB_REF_NAME" --notes-file - <<EOF
-          Linux x86-64, Windows x86-64, macOS Apple Silicon과 Intel용 포터블 빌드입니다.
+            --repo "$GITHUB_REPOSITORY" --verify-tag --title "CH75K Studio $GITHUB_REF_NAME" --notes-file - <<EOF
+          - Linux x86-64는 \`CH75K-Linux-x86_64\`를 내려받아 \`chmod +x CH75K-Linux-x86_64\` 후 실행합니다.
+          - Windows x86-64는 \`CH75K-Windows-x86_64.exe\`를 실행합니다.
+          - macOS는 Apple Silicon용 \`CH75K-macOS-arm64.dmg\` 또는 Intel용 \`CH75K-macOS-x86_64.dmg\`를 열고 CH75K 앱을 복사합니다.
+
           [설치 및 사용 안내]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/$GITHUB_REF_NAME/README.md)
 
           ### 다운로드 검증
 
-          SHA256SUMS와 OS에 맞는 패키지를 함께 다운로드하세요.
+          SHA256SUMS와 OS에 맞는 파일을 함께 다운로드하세요.
           GitHub CLI로 SHA256SUMS의 서명 출처를 확인할 수 있습니다.
 
           \`\`\`sh
           gh attestation verify SHA256SUMS --repo $GITHUB_REPOSITORY --signer-workflow $GITHUB_REPOSITORY/.github/workflows/build.yml --source-ref $GITHUB_REF --source-digest $GITHUB_SHA --deny-self-hosted-runners
           \`\`\`
 
-          검증된 SHA256SUMS에서 받은 패키지의 값과 실제 SHA-256을 비교하세요.
+          검증된 SHA256SUMS의 값과 다운로드한 파일의 SHA-256을 비교하세요.
           Linux에서 \`sha256sum <파일>\`, macOS에서 \`shasum -a 256 <파일>\`, Windows PowerShell에서 \`Get-FileHash <파일> -Algorithm SHA256\`을 실행합니다.
           EOF

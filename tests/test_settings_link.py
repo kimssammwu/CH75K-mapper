@@ -9,7 +9,8 @@ from unittest.mock import patch
 
 import ch75k
 from actions import parse_action
-from protocol import ProtocolError, SettingsLink
+from device_profile import decode_profile
+from protocol import BLOCK_SIZE, PROFILE_POINTER, ProtocolError, SettingsLink
 from settings import (
     BUTTONS, KEY_MATRIX, KEY_MATRIX_END, MACRO_END, MACRO_TRIGGERS,
     PROFILE_PREFIX, TABLE, encode_macro, parse_profile, plan_changes,
@@ -17,6 +18,7 @@ from settings import (
 
 
 BASE = 0xE0
+FACTORY_MACRO_END = BASE + PROFILE_PREFIX + 5 * 16
 
 
 def factory_image():
@@ -88,6 +90,10 @@ class FakeUSB:
         assert report == 7 and size == 16
         return (bytes((report,)) + bytes(13) + BASE.to_bytes(2, "little"))[:self.metadata_length]
 
+    def read_addresses(self):
+        return [address for group, opcode, address, index, _, _ in self.commands
+                if (group, opcode, index) == (0x18, 5, 0)]
+
 
 class NativeTests(unittest.TestCase):
     def setUp(self):
@@ -115,6 +121,74 @@ class NativeTests(unittest.TestCase):
         payload, count = encode_macro(parse_action("Ctrl+X"))
         self.assertEqual(count, 4)
         self.assertEqual(payload, bytes.fromhex("01 00 86 e0 86 1b 06 1b 06 e0") + bytes(6))
+
+    def test_sync_rejects_a_stale_device_before_writing_or_backing_up(self):
+        fake = FakeUSB(self.original)
+        with (
+            patch("ch75k.select_device", return_value=self.device),
+            patch("ch75k.Hidraw", return_value=nullcontext(fake)),
+            patch("ch75k.SettingsLink", side_effect=lambda h, n: SettingsLink(h, n, lambda _: None)),
+            patch("ch75k._persist_backup") as backup,
+            patch("ch75k._write_and_verify") as write,
+        ):
+            snapshot = ch75k.capture_profile("fake")
+            fake.flash[FACTORY_MACRO_END - 16 + 2] ^= 1
+            fake.commands.clear()
+            with self.assertRaisesRegex(ProtocolError, "장치 설정이 바뀌었습니다"):
+                ch75k.apply_profile("fake", {"keys": {"top-left": "Esc"}}, expected=snapshot)
+            self.assertEqual(fake.read_addresses(), [PROFILE_POINTER, *range(BASE, FACTORY_MACRO_END, BLOCK_SIZE)])
+            backup.assert_not_called()
+            write.assert_not_called()
+
+    def test_factory_snapshot_stops_at_allocated_macros_without_changing_decode(self):
+        fake = FakeUSB(self.original)
+        base, image = ch75k._snapshot(SettingsLink(fake, 8, wait=lambda _: None), True)
+        self.assertEqual((base, image), (BASE, self.original[BASE:FACTORY_MACRO_END]))
+        self.assertEqual(fake.read_addresses(), [PROFILE_POINTER, *range(BASE, FACTORY_MACRO_END, BLOCK_SIZE)])
+        self.assertEqual(decode_profile(base, image), decode_profile(base, self.original[BASE:MACRO_END]))
+
+    def test_snapshot_reads_full_region_when_slot_end_is_uncertain(self):
+        for case in ("invalid table", "last slot in use"):
+            with self.subTest(case=case):
+                fake = FakeUSB(self.original)
+                if case == "invalid table":
+                    fake.flash[BASE + TABLE] = 0xFF
+                else:
+                    # The last slot has no following address to determine its end.
+                    fake.flash[BASE + TABLE + 19 * 5 + 1] = 2
+                _, image = ch75k._snapshot(SettingsLink(fake, 8, wait=lambda _: None), True)
+                self.assertEqual(image, fake.flash[BASE:MACRO_END])
+                self.assertEqual(fake.read_addresses()[-1], MACRO_END - BLOCK_SIZE)
+
+    def test_sync_reads_only_allocated_and_potential_append_blocks(self):
+        for action, blocked in (("Esc", False), ("Ctrl+F13", False), ("Ctrl+F13", True)):
+            with self.subTest(action=action, blocked=blocked):
+                fake = FakeUSB(self.original)
+                profile = {"keys": {"top-left": action}}
+                macro_size = len(parse_profile(profile)["top-left"].body)
+                read_end = FACTORY_MACRO_END + macro_size
+                with (
+                    patch("ch75k.select_device", return_value=self.device),
+                    patch("ch75k.Hidraw", return_value=nullcontext(fake)),
+                    patch("ch75k.SettingsLink", side_effect=lambda h, n: SettingsLink(h, n, lambda _: None)),
+                    patch("ch75k._persist_backup", return_value=Path("/fake/backup.json")) as backup,
+                ):
+                    snapshot = ch75k.capture_profile("fake")
+                    fake.commands.clear()
+                    fake.flash[read_end] = 0xCD
+                    if blocked:
+                        fake.flash[FACTORY_MACRO_END + 1] = 0xCD
+                        with self.assertRaisesRegex(ProtocolError, "빈 저장 영역이 부족합니다"):
+                            ch75k.apply_profile("fake", profile, expected=snapshot)
+                        backup.assert_not_called()
+                        self.assertEqual(fake.flash[FACTORY_MACRO_END + 1], 0xCD)
+                    else:
+                        result = ch75k.apply_profile("fake", profile, expected=snapshot)
+                        self.assertIn("다시 읽어 확인", result)
+                        backup.assert_called_once()
+                    self.assertEqual(fake.flash[read_end], 0xCD)
+                    self.assertEqual(sorted(set(fake.read_addresses())),
+                                     [PROFILE_POINTER, *range(BASE, read_end, BLOCK_SIZE)])
 
     def test_long_delay_words(self):
         payload, count = encode_macro(parse_action("A@1600, F13"))

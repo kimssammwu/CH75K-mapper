@@ -4,7 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; base-uri 'none'; form-action 'none'">
-<title>CH75K 키 매핑</title>
+<title>CH75K Studio</title>
+<link rel="icon" type="image/svg+xml" href="{{CH75K_ICON}}">
 <style>
   :root {
     color-scheme: light;
@@ -18,7 +19,8 @@
   .sr-only { position:absolute; width:1px; height:1px; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap }
   :focus-visible { outline:2px solid var(--blue); outline-offset:3px }
   body,h1,h2,h3,p { margin:0 }
-  body { min-width:290px }
+  body { min-width:290px; -webkit-user-select:none; user-select:none }
+  input[type="text"],input[type="number"],textarea { -webkit-user-select:text; user-select:text }
   button,input,select,textarea { font:inherit }
   button { cursor:pointer; color:inherit }
   button:disabled { cursor:default }
@@ -26,8 +28,7 @@
   .layout { width:min(1400px,100%); margin:auto; padding:32px 48px 28px }
   .mast { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:22px }
   .brand { display:flex; align-items:center; gap:13px; min-width:0 }
-  .brand-icon { display:grid; place-items:center; width:47px; height:47px; flex:none; border-radius:13px; background:#243152; color:#f4f6ff }
-  .brand-icon .icon { width:26px; height:26px }
+  .brand-icon { display:block; width:47px; height:47px; flex:none }
   .brand-name { color:var(--muted); font-size:11px; font-weight:720; margin-bottom:3px }
   h1 { font-size:29px; line-height:1; letter-spacing:-.045em; font-weight:760 }
   .file-actions,.footer-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap }
@@ -67,16 +68,6 @@
   #model-views [data-control]:focus-visible .selection-indicator { opacity:1 }
   #model-views [data-control]:focus-visible .selection-indicator { stroke:#fff; stroke-width:3 }
   #model-views [data-control="dial"]:focus-visible .selection-indicator { stroke:#2948bf }
-  .parts-disclosure { margin:0 21px 14px }
-  .parts-disclosure summary { width:max-content; max-width:100%; cursor:pointer; padding:6px 9px; color:var(--muted); font-size:12px; font-weight:670; border-radius:7px }
-  .parts-disclosure summary:hover { background:#dce5f8; color:var(--blue-ink) }
-  .parts { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:5px; padding-top:8px }
-  .parts button { min-width:0; display:grid; grid-template-columns:minmax(0,1fr); align-content:start; gap:2px; border:1px solid #dce4f4; border-radius:8px; background:#ffffffa8; padding:7px 8px; text-align:left }
-  .parts button:hover { border-color:#a7b9fa }
-  .parts button[aria-pressed="true"] { border-color:#a7b9fa; background:#e4ecff; color:var(--blue-ink) }
-  .part-name { font-size:11px; font-weight:720; white-space:nowrap }
-  .part-value { color:var(--muted); font-size:10px; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; overflow-wrap:anywhere }
-
   .sidebar { min-width:0; min-height:0; contain:size; overflow-y:auto; overscroll-behavior-y:contain; scrollbar-gutter:stable }
   .sidebar:focus-visible { outline-offset:-2px }
   .editor { padding:25px 24px 24px }
@@ -142,8 +133,32 @@
   .device-select { min-height:35px; padding:5px 8px; font-size:12px; width:auto; max-width:100% }
   .confirm { display:inline-flex; align-items:center; gap:5px; font-size:12px; line-height:1.4 }
   .confirm input { accent-color:var(--blue); margin:0; flex:none }
-  .message { white-space:pre-line; overflow-wrap:anywhere; margin-top:8px; background:#edf4ff; color:#283e7e; padding:10px 13px; border:1px solid #d5e1fb; border-radius:9px; font-size:12px; line-height:1.55 }
-  .message.error { background:#fff4ef; color:#873e22; border-color:#f0d9d0 }
+  .operation-toast {
+    position:fixed; z-index:2; left:50%; bottom:max(18px,env(safe-area-inset-bottom)); transform:translateX(-50%);
+    width:max-content; max-width:min(560px,calc(100% - 24px)); padding:10px 16px; pointer-events:none;
+    background:#edf4ff; color:#283e7e; border:1px solid #d5e1fb; border-radius:12px; box-shadow:0 6px 20px #17234326;
+    text-align:center; white-space:pre-line; overflow-wrap:anywhere; font-size:13px; line-height:1.55;
+  }
+  .operation-toast:empty { opacity:0 }
+  .operation-toast.error { background:#fff4ef; color:#873e22; border-color:#f0d9d0 }
+  .conflict-dialog { width:min(650px,calc(100% - 28px)); max-height:calc(100% - 28px); padding:clamp(15px,4vw,25px); border:1px solid var(--edge); border-radius:18px; background:var(--white); color:var(--ink); box-shadow:0 20px 60px #1723433d }
+  .conflict-dialog::backdrop { background:#19213769 }
+  .conflict-dialog h2 { font-size:clamp(20px,4vw,25px); line-height:1.3 }
+  .conflict-dialog p { color:var(--muted); font-size:13px; line-height:1.5 }
+  .conflict-dialog h2 + p { margin-top:6px }
+  .conflict-values { max-height:min(40vh,300px); overflow:auto; margin:16px 0 10px; border:1px solid var(--edge); border-radius:9px }
+  .conflict-values table { table-layout:fixed; border-spacing:0; width:100%; font-size:12px; line-height:1.45 }
+  .conflict-values th,.conflict-values td { padding:8px; text-align:left; vertical-align:top; overflow-wrap:anywhere }
+  .conflict-values thead th { position:sticky; top:0; background:#f0f3fa; color:var(--muted); box-shadow:0 1px var(--edge) }
+  .conflict-values tr > :first-child { width:24% }
+  .conflict-values tbody th,.conflict-values tbody td { border-top:1px solid var(--edge) }
+  .conflict-values tbody tr:first-child > * { border-top:0 }
+  .conflict-values td { white-space:pre-line }
+  .conflict-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:8px; margin-top:17px }
+  .conflict-actions #conflict-later { margin-right:auto }
+  @media(max-width:530px) {
+    .conflict-actions .control { width:100%; white-space:normal }
+  }
   @media(max-width:1080px) {
     .layout { padding-inline:28px }
     .workspace { grid-template-columns:minmax(0,1fr) minmax(285px,324px) }
@@ -164,8 +179,7 @@
     .layout { padding:15px 12px 18px }
     .mast { margin-bottom:15px; gap:6px }
     .brand { gap:8px }
-    .brand-icon { width:36px; height:36px; border-radius:9px }
-    .brand-icon .icon { width:21px; height:21px }
+    .brand-icon { width:36px; height:36px }
     .brand-name { font-size:10px; margin-bottom:2px }
     h1 { font-size:22px }
     .file-actions { gap:3px; justify-content:flex-end }
@@ -177,9 +191,6 @@
     .model-stage { margin:-3px -5px -5px; padding-inline:4px }
     #model-views .model-callouts { display:none }
     .figure-readout.sr-only { position:static; width:auto; height:auto; clip-path:none; white-space:normal; margin:0 12px 5px; color:var(--blue-ink); font-size:12px; font-weight:720; text-align:center; overflow-wrap:anywhere }
-    .parts-disclosure { margin:0 11px 8px }
-    .parts button { display:flex; align-items:flex-start; flex-direction:column; gap:0; padding:6px }
-    .part-value { max-width:100%; text-align:left }
     .editor { padding:15px 13px 16px }
     .footer { gap:7px }
     .footer-actions .control { min-height:36px; padding-inline:9px; font-size:11px }
@@ -191,18 +202,17 @@
 </head>
 <body>
 <svg xmlns="http://www.w3.org/2000/svg" style="position:absolute;width:0;height:0" aria-hidden="true">
-  <symbol id="ui-grid" viewBox="0 0 24 24"><rect x="3" y="5" width="5" height="5" rx="1.1"/><rect x="10" y="5" width="5" height="5" rx="1.1"/><rect x="3" y="12" width="5" height="5" rx="1.1"/><rect x="10" y="12" width="5" height="5" rx="1.1"/><circle cx="19.1" cy="8" r="2.2"/><path d="M18 13h2"/></symbol>
   <symbol id="ui-folder" viewBox="0 0 20 20"><path d="M2.6 6a1.4 1.4 0 0 1 1.4-1.4h4.2l1.7 2H16A1.4 1.4 0 0 1 17.4 8v6.3A1.7 1.7 0 0 1 15.7 16H4.3a1.7 1.7 0 0 1-1.7-1.7Z"/></symbol>
   <symbol id="ui-save" viewBox="0 0 20 20"><path d="M10 2.8v8.4m-3.2-3.1L10 11.4l3.2-3.3M3.5 12v3.7c0 .6.5 1.1 1.1 1.1h10.8c.6 0 1.1-.5 1.1-1.1V12"/></symbol>
   <symbol id="ui-apply" viewBox="0 0 20 20"><path d="m4.2 10 3.8 3.8 7.8-7.6"/></symbol>
 </svg>
 <main class="layout">
-  <header class="mast" aria-label="CH75K">
+  <header class="mast" aria-label="CH75K Studio">
     <div class="brand">
-      <div class="brand-icon"><svg class="icon" aria-hidden="true"><use href="#ui-grid"/></svg></div>
+      <img class="brand-icon" src="{{CH75K_ICON}}" width="47" height="47" alt="" draggable="false">
       <div>
-        <p class="brand-name">독립 설정 도구</p>
-        <h1>CH75K</h1>
+        <p class="brand-name">키패드 설정</p>
+        <h1>CH75K Studio</h1>
       </div>
     </div>
     <div class="file-actions">
@@ -227,10 +237,6 @@
         </div>
       </div>
       <figcaption class="figure-readout sr-only" id="figure-readout" data-readout></figcaption>
-      <details class="parts-disclosure">
-        <summary>조작부 목록</summary>
-        <div id="parts" class="parts" aria-label="키패드 조작부"></div>
-      </details>
     </figure>
     <aside class="sidebar" aria-label="선택한 위치 설정" tabindex="0">
       <section class="editor" aria-labelledby="position-name">
@@ -333,8 +339,24 @@
       </div>
     </div>
   </footer>
-  <p id="operation-message" class="message" role="status" aria-live="polite" hidden></p>
 </main>
+<p id="operation-message" class="operation-toast" role="status" aria-atomic="true"></p>
+<dialog id="settings-conflict" class="conflict-dialog" aria-labelledby="settings-conflict-title" aria-describedby="settings-conflict-help settings-conflict-note">
+  <h2 id="settings-conflict-title">장치와 편집 설정이 다릅니다</h2>
+  <p id="settings-conflict-help">어느 쪽의 설정을 사용할지 선택하세요.</p>
+  <div class="conflict-values" tabindex="0" role="region" aria-label="키 설정 비교">
+    <table>
+      <thead><tr><th scope="col">버튼</th><th scope="col">장치에 저장됨</th><th scope="col">편집 중</th></tr></thead>
+      <tbody id="settings-conflict-table"></tbody>
+    </table>
+  </div>
+  <p id="settings-conflict-note" hidden></p>
+  <div class="conflict-actions">
+    <button class="control" id="conflict-later" type="button" autofocus>나중에</button>
+    <button class="control" id="conflict-load" type="button">장치 설정 불러오기</button>
+    <button class="control primary" id="conflict-write" type="button">편집 설정을 장치에 쓰기</button>
+  </div>
+</dialog>
 <script>
 (async () => {
   "use strict";
@@ -378,10 +400,11 @@
   const mappedInput = byId("mapped-action");
   const mouseAction = byId("mouse-action");
   const types = [...document.querySelectorAll("[data-action-type]")];
-  const parts = byId("parts");
   const clearButton = byId("clear-button");
   const confirm = byId("confirm");
   const deviceSelect = byId("device-select");
+  const conflictDialog = byId("settings-conflict");
+  const operationMessage = byId("operation-message");
   const nativeBridge = window.webkit?.messageHandlers?.ch75k;
   const hasBridge = typeof nativeBridge?.postMessage === "function";
   const pending = new Map();
@@ -395,9 +418,13 @@
   let scanning = false;
   let devices = [];
   let currentMappings = {};
+  let connectionRevision = 0;
+  let comparedOnConfirmation = false;
+  let comparison = null;
   let profile = {keys:{}};
   let storageAvailable;
   let pressedTimer;
+  let operationMessageTimer;
   let previewTimer;
   let previewGeneration = 0;
   let discardedStoredSettings = 0;
@@ -452,7 +479,7 @@
     const request = pending.get(id);
     if (!request) return;
     if (typeof result?.progress === "string") {
-      showMessage(result.progress);
+      showMessage(result.progress, {persistent:true});
       return;
     }
     pending.delete(id);
@@ -507,31 +534,17 @@
     if (value) return keyActionLabel(value);
     return currentMappings[id] || defaultLabel(id);
   }
-  function showMessage(text, error = false) {
-    const message = byId("operation-message");
-    message.hidden = !text;
-    message.textContent = text;
-    message.classList.toggle("error", error);
+  function showMessage(text, {error = false, persistent = false} = {}) {
+    clearTimeout(operationMessageTimer);
+    operationMessage.classList.toggle("error", error);
+    operationMessage.textContent = text || "";
+    if (text && !persistent) {
+      operationMessageTimer = setTimeout(() => showMessage(""), error ? 9000 : 6000);
+    }
   }
 
-  const partButtons = new Map();
   const partOrder = ["top-left", "top-center", "top-right", "bottom-left", "bottom-center", "bottom-right",
                      "dial", "screen-toggle"];
-  for (const id of partOrder) {
-    const title = controlNames[id];
-    const button = document.createElement("button");
-    button.type = "button";
-    button.dataset.part = id;
-    const name = document.createElement("span");
-    name.className = "part-name";
-    name.textContent = keycaps[id] || title;
-    const action = document.createElement("span");
-    action.className = "part-value";
-    button.append(name, action);
-    button.addEventListener("click", () => selectPart(id, true));
-    parts.append(button);
-    partButtons.set(id, {button, action});
-  }
 
   const targets = [...model.querySelectorAll("[data-control]")].filter(node => own(controlNames, node.dataset.control));
   const callouts = [...model.querySelectorAll("[data-action-label]")].filter(node => own(controlNames, node.dataset.actionLabel));
@@ -543,12 +556,6 @@
       target.classList.toggle("has-custom-action", !isFixed(id) && Boolean(valueOf(id)));
       target.setAttribute("aria-pressed", String(id === selected));
       target.setAttribute("aria-label", [keycaps[id], controlNames[id], labelOf(id)].filter(Boolean).join(" · "));
-    }
-    for (const [id, entry] of partButtons) {
-      const label = labelOf(id);
-      entry.button.setAttribute("aria-pressed", String(id === selected));
-      entry.action.textContent = label;
-      entry.button.title = label;
     }
     for (const callout of callouts) {
       const id = callout.dataset.actionLabel;
@@ -779,7 +786,7 @@
     const separator = existing ? (existing.endsWith(",") ? " " : ", ") : "";
     const next = existing + separator + step;
     if (next.length > macroInput.maxLength) {
-      showMessage("매크로 입력 칸에 동작을 더 추가할 수 없습니다.", true);
+      showMessage("매크로 입력 칸에 동작을 더 추가할 수 없습니다.", {error:true});
       return;
     }
     macroInput.value = next;
@@ -946,7 +953,7 @@
       const notice = discardedSettings ? " 이전 앱 실행·다이얼 설정 " + discardedSettings + "개를 제외했습니다." : "";
       showMessage(file.name + " 프로필을 불러왔습니다." + notice);
     } catch (error) {
-      showMessage("프로필을 불러오지 못했습니다. " + error.message, true);
+      showMessage("프로필을 불러오지 못했습니다. " + error.message, {error:true});
     } finally {
       inputFile.value = "";
     }
@@ -955,7 +962,7 @@
   function api(endpoint, data = {}) {
     return new Promise((resolve, reject) => {
       const id = ++nextRequest;
-      const timer = endpoint === "read" || endpoint === "apply" ? undefined : setTimeout(() => {
+      const timer = endpoint === "compare" || endpoint === "sync-apply" ? undefined : setTimeout(() => {
         pending.delete(id);
         reject(new Error("CH75K 도구의 응답 시간이 초과됐습니다."));
       }, 10000);
@@ -980,32 +987,59 @@
     deviceSelect.disabled = busy;
     confirm.disabled = busy;
   }
-  function labelHid(code) {
-    if (code >= 0x04 && code <= 0x1d) return String.fromCharCode(65 + code - 0x04);
-    if (code >= 0x1e && code <= 0x27) return "1234567890"[code - 0x1e];
-    if (code >= 0x3a && code <= 0x45) return "F" + (code - 0x39);
-    if (code >= 0x68 && code <= 0x73) return "F" + (code - 0x68 + 13);
-    const named = {
-      0x28:"Enter", 0x29:"Esc", 0x2a:"Backspace", 0x2b:"Tab", 0x2c:"Space",
-      0x4f:"Right", 0x50:"Left", 0x51:"Down", 0x52:"Up",
-      0xe0:"Ctrl", 0xe1:"Shift", 0xe2:captureKeys.AltLeft, 0xe3:captureKeys.MetaLeft
-    };
-    return named[code] || "HID 0x" + code.toString(16).padStart(2,"0").toUpperCase();
+  function closeConflict() {
+    const snapshot = comparison;
+    comparison = null;
+    if (conflictDialog.open) conflictDialog.close();
+    return snapshot;
   }
-  function readMappings(result) {
-    const lines = (result.message || "").split("\n");
-    const reported = {};
-    for (const line of lines) {
-      const match = /^([\w-]+)\s{2,}(.+)$/.exec(line);
-      if (match && own(controlNames, match[1]) && !isFixed(match[1])) reported[match[1]] = match[2];
+  function resetDeviceComparison() {
+    connectionRevision++;
+    comparedOnConfirmation = false;
+    currentMappings = {};
+    if (closeConflict()) showMessage("CH75K 연결이 바뀌었습니다. 장치를 다시 확인해 주세요.", {error:true});
+  }
+  function isCurrentConnection(snapshot) {
+    return !closed && confirm.checked && deviceSelect.value === snapshot.payload.device
+      && snapshot.connection === connectionRevision;
+  }
+  function requireCurrentComparison(snapshot) {
+    if (!isCurrentConnection(snapshot)) throw new Error("CH75K 연결이 바뀌었습니다. 장치를 다시 확인해 주세요.");
+    if (snapshot.revision !== draftRevision) throw new Error("편집 설정이 바뀌었습니다. 다시 비교해 주세요.");
+  }
+  function conflictValue(value, empty) {
+    if (!value) return empty;
+    return isObject(value) && value.type === "macro"
+      ? value.sequence + "\n" + repeatLabel(value) : keyActionLabel(value);
+  }
+  function showConflict(snapshot) {
+    const {result, deviceProfile, payload} = snapshot;
+    const changes = new Map(result.differences.map(item => [item.button, item]));
+    const table = byId("settings-conflict-table");
+    const notes = byId("settings-conflict-note");
+    table.replaceChildren();
+    for (const id of partOrder) {
+      const unsupported = result.unsupported[id];
+      if (!changes.has(id) && !unsupported) continue;
+      const item = changes.get(id);
+      const row = table.insertRow();
+      const heading = document.createElement("th");
+      heading.scope = "row";
+      heading.textContent = controlNames[id];
+      row.append(heading);
+      row.insertCell().textContent = unsupported || conflictValue(item?.device, "값을 읽을 수 없음");
+      row.insertCell().textContent = conflictValue(item?.editor ?? payload.profile.keys[id], "미지정 · 장치 값 유지");
     }
-    const values = {};
-    for (const [id, raw] of Object.entries(reported)) {
-      const match = /기기 키 코드 0x([\da-f]+)$/i.exec(raw);
-      const labels = Object.values(actionLabels);
-      values[id] = match ? labelHid(parseInt(match[1],16)) : labels.find(group => own(group, raw))?.[raw] || raw;
-    }
-    return values;
+    notes.textContent = Object.keys(result.unsupported).length
+      ? "읽을 수 없는 항목은 불러올 때 편집값을 유지합니다. 장치에 쓰기를 선택하면 편집값을 지정한 키만 바뀝니다."
+      : "편집값을 지정하지 않은 키는 장치에서 그대로 유지됩니다.";
+    notes.hidden = false;
+    byId("conflict-load").disabled = !result.differences.some(({button}) => own(deviceProfile.keys, button));
+    byId("conflict-write").disabled = !Object.keys(result.changes.keys).length || invalidRepeat();
+    comparison = snapshot;
+    cancelKeyCapture();
+    showMessage("");
+    conflictDialog.showModal();
   }
   function displayDevices(found) {
     const previous = devices.find(device => device.id === deviceSelect.value);
@@ -1015,12 +1049,13 @@
       deviceSelect.replaceChildren();
       if (devices.length > 1) deviceSelect.add(new Option("장치를 선택하세요", ""));
       for (const item of devices) deviceSelect.add(new Option(item.label, item.id));
-      if (previous && devices.some(item => item.id === previous.id && item.label === previous.label)) {
+      if (previous && devices.some(item => item.id === previous.id && item.label === previous.label
+        && item.identity === previous.identity)) {
         deviceSelect.value = previous.id;
       } else {
         confirm.checked = false;
         clearedMappings = Object.keys(currentMappings).length > 0;
-        currentMappings = {};
+        resetDeviceComparison();
       }
     }
     const present = devices.length > 0;
@@ -1048,39 +1083,96 @@
       scanning = false;
     }
   }
-  async function operate(command) {
+  async function compareSettings() {
     if (busy || !deviceSelect.value || !confirm.checked) return;
     busy = true;
     renderFooter();
-    showMessage(command === "read" ? "키패드에서 현재 설정을 읽는 중…"
-      : "키패드에 저장하고 다시 읽는 중…");
+    showMessage("장치에 저장된 설정을 읽고 비교하는 중…", {persistent:true});
     try {
-      const payload = {device:deviceSelect.value, confirmed:true};
-      if (command === "apply") payload.profile = parseProfile(profile);
-      const result = await api(command, payload);
-      if (command === "read") currentMappings = readMappings(result);
-      else {
-        for (const [id, value] of Object.entries(payload.profile.keys)) currentMappings[id] = keyActionLabel(value);
-      }
+      const snapshot = {payload:{device:deviceSelect.value, confirmed:true, profile:parseProfile(profile)},
+                        connection:connectionRevision, revision:draftRevision};
+      snapshot.result = await api("compare", snapshot.payload);
+      requireCurrentComparison(snapshot);
+      const result = snapshot.result;
+      snapshot.deviceProfile = parseProfile(result.profile);
+      currentMappings = {...result.unsupported, ...Object.fromEntries(Object.entries(snapshot.deviceProfile.keys).map(
+        ([id, value]) => [id, keyActionLabel(value)]))};
       renderSelection();
-      showMessage(result.message || "작업을 마쳤습니다.");
+      if (result.differences.length) showConflict(snapshot);
+      else {
+        const skipped = Object.keys(result.unsupported).length;
+        showMessage(skipped ? "비교할 수 있는 설정은 같습니다. 읽을 수 없는 장치 값 " + skipped + "개는 그대로 유지합니다."
+          : "장치와 편집 설정이 같습니다.");
+      }
     } catch (error) {
-      showMessage(error.message, true);
+      if (!closed) showMessage(error.message, {error:true});
     } finally {
       busy = false;
       renderFooter();
       refreshDevices();
     }
   }
+  function loadDeviceSettings() {
+    const snapshot = closeConflict();
+    if (!snapshot) return;
+    try {
+      requireCurrentComparison(snapshot);
+      profile = {keys:{...profile.keys, ...snapshot.deviceProfile.keys}};
+      storeProfile();
+      selectPart(selected);
+      showMessage("장치 설정을 편집기에 불러왔습니다.");
+    } catch (error) {
+      showMessage(error.message, {error:true});
+    }
+  }
+  async function writeEditorSettings() {
+    const snapshot = closeConflict();
+    if (!snapshot) return;
+    busy = true;
+    renderFooter();
+    showMessage("변경된 키 설정을 장치에 쓰고 확인하는 중…", {persistent:true});
+    try {
+      requireCurrentComparison(snapshot);
+      const result = await api("sync-apply", {...snapshot.payload, token:snapshot.result.token});
+      if (!isCurrentConnection(snapshot)) {
+        if (!closed) showMessage("");
+        return;
+      }
+      for (const [id, value] of Object.entries(snapshot.result.changes.keys)) currentMappings[id] = keyActionLabel(value);
+      renderSelection();
+      showMessage(result.message || "편집 설정을 장치에 저장했습니다.");
+    } catch (error) {
+      if (!closed) showMessage(error.message, {error:true});
+    } finally {
+      busy = false;
+      renderFooter();
+      refreshDevices();
+    }
+  }
+  function deferConflict() {
+    if (closeConflict()) showMessage("장치와 편집 설정을 그대로 유지했습니다.");
+  }
+  byId("conflict-load").addEventListener("click", loadDeviceSettings);
+  byId("conflict-write").addEventListener("click", writeEditorSettings);
+  byId("conflict-later").addEventListener("click", deferConflict);
+  conflictDialog.addEventListener("cancel", event => {
+    event.preventDefault();
+    deferConflict();
+  });
   deviceSelect.addEventListener("change", () => {
     confirm.checked = false;
-    currentMappings = {};
+    resetDeviceComparison();
     byId("confirm-control").hidden = !deviceSelect.value;
     renderSelection();
   });
-  confirm.addEventListener("change", renderFooter);
-  byId("read-button").addEventListener("click", () => operate("read"));
-  byId("apply-button").addEventListener("click", () => operate("apply"));
+  confirm.addEventListener("change", () => {
+    renderFooter();
+    if (!confirm.checked || comparedOnConfirmation) return;
+    comparedOnConfirmation = true;
+    compareSettings();
+  });
+  byId("read-button").addEventListener("click", compareSettings);
+  byId("apply-button").addEventListener("click", compareSettings);
   const quitButton = byId("quit-button");
   let devicePolling;
   quitButton.hidden = !hasBridge;
@@ -1097,7 +1189,7 @@
       showMessage(result.message);
     } catch (error) {
       quitButton.disabled = false;
-      showMessage(error.message, true);
+      showMessage(error.message, {error:true});
     }
   });
   byId("hardware-actions").hidden = !hasBridge;

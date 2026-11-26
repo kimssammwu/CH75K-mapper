@@ -8,8 +8,11 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import call, patch
 
+from ch75k import DeviceSnapshot
 from desktop_app import DesktopBridge
 from hid_common import HidrawAccessError, HidrawError
+from settings import MACRO_END
+from test_settings_link import BASE, factory_image
 
 
 PROFILE = {"keys": {"bottom-center": "Ctrl+C, @120, Ctrl+V"}}
@@ -88,6 +91,49 @@ class DesktopBridgeTests(unittest.TestCase):
         self.assertIn("종료", self.send("quit")["message"])
         self.assertTrue(self.bridge.stopped.wait(1))
         self.assertEqual(self.bridge.poll(), ([], True))
+
+    def test_reviewed_changes_are_the_only_hardware_write_and_token_is_single_use(self):
+        path = Path("/dev/hidraw9")
+        device = SimpleNamespace(path=path)
+        image = bytes(factory_image()[BASE:MACRO_END])
+        snapshot = DeviceSnapshot(device, BASE, image)
+        editor = {"keys": {"top-left": "Esc", "bottom-center": "Ctrl+C"}}
+        arguments = {"device": str(path), "confirmed": True, "profile": editor}
+        with (
+            patch("desktop_app.find_devices", return_value=[(str(path), "CH75K")]),
+            patch("desktop_app.capture_profile", return_value=snapshot) as capture,
+            patch("desktop_app.apply_profile", return_value="saved") as apply,
+        ):
+            self.assertIn("error", self.send("sync-apply", arguments))
+            comparison = self.send("compare", arguments)
+            capture.assert_called_once_with(str(path))
+            apply.assert_not_called()
+            self.assertEqual(comparison["changes"], {"keys": {"top-left": "Esc"}})
+            write = {**arguments, "token": comparison["token"]}
+            self.assertIn("error", self.send("sync-apply", {
+                **write, "profile": {"keys": {"top-left": "F13"}},
+            }))
+            apply.assert_not_called()
+            self.assertEqual(self.send("sync-apply", write), {"message": "saved"})
+            apply.assert_called_once_with(device, comparison["changes"], expected=snapshot,
+                                          preserve_slots_for=frozenset())
+            self.assertIn("error", self.send("sync-apply", write))
+            apply.assert_called_once()
+
+    def test_disconnect_invalidates_a_pending_comparison(self):
+        path = Path("/dev/hidraw9")
+        device = SimpleNamespace(path=path)
+        snapshot = DeviceSnapshot(device, BASE, bytes(factory_image()[BASE:MACRO_END]))
+        arguments = {"device": str(path), "confirmed": True, "profile": {"keys": {"top-left": "Esc"}}}
+        with (
+            patch("desktop_app.find_devices", side_effect=[[(str(path), "CH75K")], [], [(str(path), "CH75K")]]),
+            patch("desktop_app.capture_profile", return_value=snapshot),
+            patch("desktop_app.apply_profile") as apply,
+        ):
+            comparison = self.send("compare", arguments)
+            self.assertEqual(self.send("devices"), {"devices": []})
+            self.assertIn("error", self.send("sync-apply", {**arguments, "token": comparison["token"]}))
+            apply.assert_not_called()
 
     @unittest.skipIf(sys.platform == "win32", "The Linux hidraw permission helper uses POSIX APIs.")
     def test_linux_permission_retries_read_or_apply_once_with_original_device(self):

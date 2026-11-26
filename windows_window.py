@@ -8,11 +8,12 @@ from tempfile import TemporaryDirectory
 from time import monotonic
 
 
-RUNTIME_MESSAGE = "Microsoft Edge WebView2 Evergreen 런타임을 설치한 뒤 CH75K 매퍼를 다시 실행하세요."
+RUNTIME_MESSAGE = "Microsoft Edge WebView2 Evergreen 런타임을 설치한 뒤 CH75K Studio를 다시 실행하세요."
 RUNTIME_REGISTRY_KEY = r"Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
 LOCAL_HOST = "ch75k.invalid"
 DOCUMENT_NAME = "mapper.html"
 DOCUMENT_URL = f"https://{LOCAL_HOST}/{DOCUMENT_NAME}"
+APP_ICON = Path(__file__).with_name("assets") / "app-icon.ico"
 
 # Define the mapper's bridge before its script executes. WebView2 delivers
 # these messages in order without a second injected JavaScript API.
@@ -78,7 +79,7 @@ def _run_webview(documents: Path, dispatch, poll):
         "ALLOW_FILE_URLS": False,
         "OPEN_EXTERNAL_LINKS_IN_BROWSER": False,
     })
-    window = webview.create_window("CH75K 매퍼",
+    window = webview.create_window("CH75K Studio",
                                    width=1280, height=900, min_size=(700, 600))
     failure = None
 
@@ -179,6 +180,6 @@ def _run_webview(documents: Path, dispatch, poll):
             form.Shown += lambda sender, _args: sender.Close()
 
     window.events.before_show += before_show
-    webview.start(gui="edgechromium", http_server=False, private_mode=True)
+    webview.start(gui="edgechromium", http_server=False, private_mode=True, icon=str(APP_ICON))
     if failure is not None:
         raise failure

@@ -224,6 +224,14 @@ def _slots(base: int, data: bytes) -> list[Slot]:
     return slots
 
 
+def macro_storage_end(base: int, prefix: bytes) -> int:
+    """Use the end of allocated macro data when the slot table establishes it."""
+    try:
+        return _slots(base, prefix)[-1].end
+    except ProtocolError:
+        return MACRO_END
+
+
 def _macro_end(base: int, data: bytes, slot: Slot) -> int | None:
     cursor = slot.address - base + 2
     for _ in range(slot.words):
@@ -241,7 +249,8 @@ def _macro_end(base: int, data: bytes, slot: Slot) -> int | None:
     return end if end <= base + len(data) else None
 
 
-def plan_changes(base: int, original: bytes, keys: dict[str, Action]) -> list[Change]:
+def plan_changes(base: int, original: bytes, keys: dict[str, Action], *,
+                 preserve_slots_for: frozenset[str] = frozenset()) -> list[Change]:
     verify_matrix(original)
     edited = bytearray(original)
     phases = {}
@@ -256,8 +265,9 @@ def plan_changes(base: int, original: bytes, keys: dict[str, Action]) -> list[Ch
 
     macros = any(action.key is None for action in keys.values())
     slots = _slots(base, original) if macros else []
-    if macros and len(original) != MACRO_END - base:
-        raise ProtocolError("매크로 저장 영역을 전부 읽은 뒤 다시 시도하세요.")
+    read_end = base + len(original)
+    if slots and not slots[-1].end <= read_end <= MACRO_END:
+        raise ProtocolError("기존 매크로 저장 영역을 읽은 뒤 다시 시도하세요.")
     references = Counter(original[KEY_MATRIX:EXTENDED_KEYS_END])
     for button, action in keys.items():
         offset = BUTTONS[button]
@@ -273,7 +283,7 @@ def plan_changes(base: int, original: bytes, keys: dict[str, Action]) -> list[Ch
                        None)
         if matches is not None:
             slot_id = matches
-        elif (existing is not None and references[current] == 1
+        elif (button not in preserve_slots_for and existing is not None and references[current] == 1
               and slots[existing].words
               and slots[existing].flags & 0x4000 == 0
               and _macro_end(base, edited, slots[existing]) == slots[existing].end
@@ -289,7 +299,7 @@ def plan_changes(base: int, original: bytes, keys: dict[str, Action]) -> list[Ch
                 raise ProtocolError("기존 매크로를 보존하며 추가할 수 있는 슬롯이 없습니다.")
             slot = slots[slot_id]
             end = slot.address + len(action.body)
-            if end > MACRO_END or any(value not in (0, 255) for value in edited[slot.address - base:end - base]):
+            if end > read_end or any(value not in (0, 255) for value in edited[slot.address - base:end - base]):
                 raise ProtocolError("기존 매크로를 보존할 수 있는 빈 저장 영역이 부족합니다.")
             set_bytes(slot.address, action.body, 0)
             slot.words, slot.flags, slot.end = action.words, action.flags, end

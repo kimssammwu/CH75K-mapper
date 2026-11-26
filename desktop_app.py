@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import argparse
 from contextlib import redirect_stderr, redirect_stdout, suppress
+from dataclasses import dataclass
 import faulthandler
 from io import BytesIO
 import json
 import math
 from pathlib import Path
 from queue import Empty, Full, Queue, SimpleQueue
+from secrets import token_urlsafe
 import shutil
 import struct
 import subprocess
@@ -18,7 +20,8 @@ from tempfile import NamedTemporaryFile, TemporaryDirectory
 from threading import Event, Thread
 import wave
 
-from ch75k import apply_profile, find_devices, preview_profile, read_profile, state_directory
+from ch75k import DeviceSnapshot, apply_profile, capture_profile, find_devices, preview_profile, read_profile, state_directory
+from device_profile import compare_profile
 from hid_common import HidrawAccessError, HidrawError
 from protocol import ProtocolError
 from settings import BUTTONS
@@ -116,6 +119,15 @@ def _play_connection_sound():
         pass
 
 
+@dataclass(frozen=True)
+class PendingComparison:
+    token: str
+    snapshot: DeviceSnapshot
+    draft: dict
+    changes: dict
+    preserve_slots_for: frozenset[str]
+
+
 class DesktopBridge:
     """Move WebView commands to a worker and replies back to the UI thread."""
 
@@ -127,6 +139,7 @@ class DesktopBridge:
         self.smoke_error = ""
         self.previewed = False
         self.device_present = False
+        self.comparison: PendingComparison | None = None
         self.commands = Queue(maxsize=128)
         self.replies = SimpleQueue()
         self.stopped = Event()
@@ -186,6 +199,10 @@ class DesktopBridge:
     def _handle(self, endpoint: str, data: dict, *, request_id: int) -> dict:
         if endpoint == "devices":
             devices = [] if self.smoke else find_devices()
+            if self.comparison and all(
+                path != str(self.comparison.snapshot.device.path) for path, _ in devices
+            ):
+                self.comparison = None
             present = bool(devices)
             if present and not self.device_present:
                 Thread(target=_play_connection_sound, name="CH75K connection sound", daemon=True).start()
@@ -212,31 +229,59 @@ class DesktopBridge:
             if not self.smoke_passed:
                 self.smoke_error = str(data.get("error") or "매크로 미리 보기 요청을 받지 못했습니다.")
             return {}
-        if not self.smoke and endpoint in ("read", "apply"):
+        if not self.smoke and endpoint in ("read", "apply", "compare", "sync-apply"):
             device = data.get("device")
             if not isinstance(device, str) or not device or data.get("confirmed") is not True:
                 raise ValueError("장치를 선택하고 CH75K 모델을 확인해 주세요.")
             if device not in {path for path, _ in find_devices()}:
                 raise ValueError("선택한 장치를 다시 연결해 주세요.")
+            if endpoint == "compare":
+                self.comparison = None
+                draft = json.loads(_draft_json(data.get("profile")))
+                snapshot = self._with_device_access(capture_profile, device, request_id=request_id)
+                result = compare_profile(snapshot.base, snapshot.image, draft)
+                token = token_urlsafe(18)
+                self.comparison = PendingComparison(
+                    token, snapshot, draft, result["changes"], frozenset(result["unsupported"]),
+                )
+                return {**result, "token": token}
+            if endpoint == "sync-apply":
+                comparison = self.comparison
+                draft = json.loads(_draft_json(data.get("profile")))
+                if (comparison is None or comparison.token != data.get("token")
+                        or str(comparison.snapshot.device.path) != device or comparison.draft != draft):
+                    raise ValueError("비교 이후 선택이나 편집값이 바뀌었습니다. 다시 비교해 주세요.")
+                self.comparison = None
+                if not comparison.changes["keys"]:
+                    raise ValueError("장치에 기록할 변경이 없습니다.")
+                result = self._with_device_access(
+                    apply_profile, comparison.snapshot.device, comparison.changes,
+                    request_id=request_id, expected=comparison.snapshot,
+                    preserve_slots_for=comparison.preserve_slots_for,
+                )
+                return {"message": result}
             operation = read_profile if endpoint == "read" else apply_profile
             arguments = (data.get("profile"),) if endpoint == "apply" else ()
-            try:
-                result = operation(device, *arguments)
-            except HidrawAccessError as error:
-                if not sys.platform.startswith("linux") or self.window_closed.is_set():
-                    raise
-                from linux_permissions import request_hid_access
-
-                self.replies.put((request_id, {
-                    "progress": "CH75K USB 접근 권한이 필요합니다. 시스템 인증 창에서 승인해 주세요.",
-                }))
-                request_hid_access(error.device)
-                if self.window_closed.is_set():
-                    raise RuntimeError("창이 닫혀 장치 작업을 취소했습니다.")
-                # Reopen the same identity snapshot, even if a hidraw name has been reused.
-                result = operation(error.device, *arguments)
+            result = self._with_device_access(operation, device, *arguments, request_id=request_id)
             return {"message": result}
         raise ValueError("요청한 작업을 찾지 못했습니다.")
+
+    def _with_device_access(self, operation, device, *arguments, request_id, **options):
+        try:
+            return operation(device, *arguments, **options)
+        except HidrawAccessError as error:
+            if not sys.platform.startswith("linux") or self.window_closed.is_set():
+                raise
+            from linux_permissions import request_hid_access
+
+            self.replies.put((request_id, {
+                "progress": "CH75K USB 접근 권한이 필요합니다. 시스템 인증 창에서 승인해 주세요.",
+            }))
+            request_hid_access(error.device)
+            if self.window_closed.is_set():
+                raise RuntimeError("창이 닫혀 장치 작업을 취소했습니다.")
+            # Reopen the same identity snapshot, even if a hidraw name has been reused.
+            return operation(error.device, *arguments, **options)
 
 
 def _run_window(page: Path, bridge: DesktopBridge):
@@ -305,7 +350,7 @@ def _smoke_test():
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="CH75K 데스크톱 매퍼")
+    parser = argparse.ArgumentParser(description="CH75K Studio")
     parser.add_argument("--smoke-test", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--smoke-result", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
@@ -334,11 +379,15 @@ def _launch(args: argparse.Namespace) -> int:
             elif sys.stdout is not None:
                 print(SMOKE_SUCCESS, flush=True)
         else:
+            if sys.platform.startswith("linux"):
+                from linux_desktop import register_desktop_icon
+
+                register_desktop_icon()
             _run_window(PAGE, DesktopBridge(state_directory() / "draft.json"))
     except Exception as exc:
         if args.smoke_result is None and not isinstance(exc, (OSError, RuntimeError, ValueError)):
             raise
-        message = f"CH75K 매퍼를 열지 못했습니다. {exc}"
+        message = f"CH75K Studio를 열지 못했습니다. {exc}"
         if args.smoke_result is not None:
             with suppress(OSError):
                 args.smoke_result.write_text(message, encoding="utf-8")
@@ -347,7 +396,7 @@ def _launch(args: argparse.Namespace) -> int:
         elif sys.platform == "win32" and not args.smoke_test:
             from ctypes import windll
 
-            windll.user32.MessageBoxW(None, message, "CH75K 매퍼", 0x10)
+            windll.user32.MessageBoxW(None, message, "CH75K Studio", 0x10)
         return 1
     return 0
 

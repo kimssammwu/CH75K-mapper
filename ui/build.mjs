@@ -269,7 +269,11 @@ const template = join(HERE,"template.html");
 if (existsSync(template) && !process.argv.includes("--geometry-only")) {
   const shell = readFileSync(template,"utf8");
   if (!shell.includes("{{CH75K_GEOMETRY}}")) throw new Error("The mapper HTML template is missing its geometry slot.");
-  writeFileSync(join(OUTPUT,"mapper.html"), shell.replace("{{CH75K_GEOMETRY}}", views.map(({svg}) => svg).join("\n")));
+  if (!shell.includes("{{CH75K_ICON}}")) throw new Error("The mapper HTML template is missing its app icon slot.");
+  const icon = readFileSync(join(OUTPUT,"assets","app-icon.svg")).toString("base64");
+  writeFileSync(join(OUTPUT,"mapper.html"), shell
+    .replaceAll("{{CH75K_ICON}}", `data:image/svg+xml;base64,${icon}`)
+    .replace("{{CH75K_GEOMETRY}}", views.map(({svg}) => svg).join("\n")));
 }
 for (const [i,{R}] of views.entries()) process.stdout.write(`${CAMERAS[i][0]}: ${R.solids.length} vector solids\n`);
 if (process.argv.includes("--audit")) {

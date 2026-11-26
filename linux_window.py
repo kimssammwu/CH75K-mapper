@@ -11,11 +11,14 @@ from pathlib import Path
 import sys
 from typing import Callable
 
+from linux_desktop import APP_ID, APP_ICON
+
 
 NAVIGATION_ACTION = 0
 NEW_WINDOW_ACTION = 1
 SAVE_FILE = 1
 RESPONSE_ACCEPT = -3
+APPLICATION_NON_UNIQUE = 1 << 5
 BRIDGE_CHANNEL = b"ch75k"
 LOCAL_BLOBS = (b"blob:null/", b"blob:file:///")
 
@@ -68,15 +71,30 @@ def run_window(page: Path, dispatch: Callable[[str], None],
 
 
 def _run_window(url: bytes, dispatch, poll) -> None:
-    gtk = _library("libgtk-3.so.0")
+    app_id = APP_ID.encode("ascii")
     glib = _library("libglib-2.0.so.0")
+    _signatures(glib, (
+        ("g_set_prgname", None, c_char_p),
+        ("g_set_application_name", None, c_char_p),
+        ("g_timeout_add", c_uint, c_uint, c_void_p, c_void_p),
+        ("g_source_remove", c_int, c_uint),
+        ("g_free", None, c_void_p),
+    ))
+    # GDK 3 uses the GLib program name as the Wayland xdg_toplevel app_id.
+    glib.g_set_prgname(app_id)
+    glib.g_set_application_name(b"CH75K Studio")
+    gtk = _library("libgtk-3.so.0")
+    gio = _library("libgio-2.0.so.0")
     gobject = _library("libgobject-2.0.so.0")
     webkit = _library("libwebkit2gtk-4.1.so.0", "libwebkit2gtk-4.0.so.37")
 
     _signatures(gtk, (
         ("gtk_init_check", c_int, c_void_p, c_void_p),
+        ("gtk_application_new", c_void_p, c_char_p, c_uint),
+        ("gtk_application_window_new", c_void_p, c_void_p),
         ("gtk_window_new", c_void_p, c_int),
         ("gtk_window_set_title", None, c_void_p, c_char_p),
+        ("gtk_window_set_icon_from_file", c_int, c_void_p, c_char_p, c_void_p),
         ("gtk_window_set_default_size", None, c_void_p, c_int, c_int),
         ("gtk_window_present", None, c_void_p),
         ("gtk_container_add", None, c_void_p, c_void_p),
@@ -93,11 +111,8 @@ def _run_window(url: bytes, dispatch, poll) -> None:
         ("gtk_native_dialog_run", c_int, c_void_p),
         ("gtk_native_dialog_hide", None, c_void_p),
     ))
-    _signatures(glib, (
-        ("g_set_application_name", None, c_char_p),
-        ("g_timeout_add", c_uint, c_uint, c_void_p, c_void_p),
-        ("g_source_remove", c_int, c_uint),
-        ("g_free", None, c_void_p),
+    _signatures(gio, (
+        ("g_application_register", c_int, c_void_p, c_void_p, c_void_p),
     ))
     _signatures(gobject, (
         ("g_signal_connect_data", c_ulong, c_void_p, c_char_p, c_void_p, c_void_p, c_void_p, c_uint),
@@ -126,11 +141,16 @@ def _run_window(url: bytes, dispatch, poll) -> None:
         ("webkit_download_cancel", None, c_void_p),
     ))
 
-    glib.g_set_application_name(b"CH75K")
     if not gtk.gtk_init_check(None, None):
         raise RuntimeError("CH75K 창을 열 수 있는 그래픽 세션을 찾지 못했습니다.")
 
-    window = gtk.gtk_window_new(0)
+    # An application window also exposes its GTK application ID to GNOME over
+    # Wayland. Keep instances independent and retain a plain-window fallback.
+    application = gtk.gtk_application_new(app_id, APPLICATION_NON_UNIQUE)
+    if application and not gio.g_application_register(application, None, None):
+        gobject.g_object_unref(application)
+        application = None
+    window = gtk.gtk_application_window_new(application) if application else gtk.gtk_window_new(0)
     context = webkit.webkit_web_context_new_ephemeral()
     view = webkit.webkit_web_view_new_with_context(context)
     manager = gobject.g_object_ref(webkit.webkit_web_view_get_user_content_manager(view))
@@ -251,7 +271,9 @@ def _run_window(url: bytes, dispatch, poll) -> None:
     gobject.g_signal_connect_data(view, b"web-process-terminated", on_process_terminated, None, None, 0)
     gobject.g_signal_connect_data(context, b"download-started", on_download, None, None, 0)
     gobject.g_signal_connect_data(manager, b"script-message-received::ch75k", on_message, None, None, 0)
-    gtk.gtk_window_set_title(window, "CH75K 매퍼".encode())
+    gtk.gtk_window_set_title(window, b"CH75K Studio")
+    if APP_ICON.is_file():
+        gtk.gtk_window_set_icon_from_file(window, os.fsencode(APP_ICON), None)
     gtk.gtk_window_set_default_size(window, 1240, 820)
     gtk.gtk_container_add(window, view)
     try:
@@ -271,5 +293,7 @@ def _run_window(url: bytes, dispatch, poll) -> None:
             gtk.gtk_widget_destroy(window)
         gobject.g_object_unref(manager)
         gobject.g_object_unref(context)
+        if application:
+            gobject.g_object_unref(application)
     if error:
         raise error
