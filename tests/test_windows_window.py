@@ -4,7 +4,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from windows_window import run_window
+from windows_window import DOCUMENT_NAME, DOCUMENT_URL, LOCAL_HOST, run_window
 
 
 PAGE = Path(__file__).resolve().parents[1] / "mapper.html"
@@ -30,6 +30,7 @@ class NativeEvent:
 class WindowsWindowTests(unittest.TestCase):
     def setUp(self):
         self.core = Mock()
+        self.deny = object()
         self.view = SimpleNamespace(
             CoreWebView2=self.core,
             CoreWebView2InitializationCompleted=NativeEvent(),
@@ -39,10 +40,12 @@ class WindowsWindowTests(unittest.TestCase):
         )
         self.form = SimpleNamespace(
             webview=self.view, FormClosed=NativeEvent(), Shown=NativeEvent(),
-            browser=SimpleNamespace(on_script_notify=Mock(), on_navigation_completed=Mock()),
+            browser=SimpleNamespace(on_script_notify=Mock(), on_navigation_completed=Mock(),
+                                    on_webview_ready=Mock()),
         )
         self.view.WebMessageReceived += self.form.browser.on_script_notify
         self.view.NavigationCompleted += self.form.browser.on_navigation_completed
+        self.view.CoreWebView2InitializationCompleted += self.form.browser.on_webview_ready
         self.form.Close = lambda: self.form.FormClosed.fire(None, None)
         self.timer = Mock(Tick=NativeEvent())
         self.before_show = NativeEvent()
@@ -58,6 +61,9 @@ class WindowsWindowTests(unittest.TestCase):
             "webview": self.webview,
             "webview.guilib": SimpleNamespace(initialize=lambda gui: self.renderer),
             "System.Windows.Forms": SimpleNamespace(Timer=lambda: self.timer),
+            "Microsoft.Web.WebView2.Core": SimpleNamespace(
+                CoreWebView2HostResourceAccessKind=SimpleNamespace(Deny=self.deny),
+            ),
         }))
         self.enterContext(patch("windows_window._require_edge_runtime"))
 
@@ -69,29 +75,46 @@ class WindowsWindowTests(unittest.TestCase):
             self.assertEqual(options, {"gui": "edgechromium", "http_server": False, "private_mode": True})
             self.before_show.fire()
             self.assertFalse(self.view.AllowExternalDrop)
-            for url in ("about:blank", "file:///somewhere.html", "https://example.com", "about:blank#other"):
-                args = SimpleNamespace(Uri=url)
+
+            def start_navigation(url):
+                self.assertEqual(url, DOCUMENT_URL)
+                host, folder, access = self.core.SetVirtualHostNameToFolderMapping.call_args.args
+                self.assertEqual(host, LOCAL_HOST)
+                self.assertIs(access, self.deny)
+                self.assertEqual([path.name for path in Path(folder).iterdir()], [DOCUMENT_NAME])
+                html = (Path(folder) / DOCUMENT_NAME).read_text(encoding="utf-8")
+                self.assertLess(html.index("bridge.postMessage(raw)"), html.index("const nativeBridge"))
+
+            self.core.Navigate.side_effect = start_navigation
+            self.timer.Tick.fire(None, None)
+            self.core.Navigate.assert_called_once_with(DOCUMENT_URL)
+            for navigation, url in enumerate((DOCUMENT_URL, "about:blank", "file:///somewhere.html",
+                                              "https://example.com", DOCUMENT_URL + "#other"), start=1):
+                args = SimpleNamespace(Uri=url, NavigationId=navigation)
                 self.view.NavigationStarting.fire(None, args)
-                self.assertEqual(args.Cancel, url != "about:blank")
+                self.assertEqual(args.Cancel, url != DOCUMENT_URL)
+                if args.Cancel:
+                    self.view.NavigationCompleted.fire(None, SimpleNamespace(
+                        IsSuccess=False, NavigationId=navigation, WebErrorStatus="OperationCanceled",
+                    ))
 
             options = self.webview.create_window.call_args.kwargs
             self.assertNotIn("url", options)
+            self.assertNotIn("html", options)
             self.assertNotIn("js_api", options)
-            self.assertLess(options["html"].index("bridge.postMessage(raw)"),
-                            options["html"].index("const nativeBridge"))
-            self.view.NavigationCompleted.fire(None, SimpleNamespace(IsSuccess=True))
+            self.view.NavigationCompleted.fire(None, SimpleNamespace(IsSuccess=True, NavigationId=1))
             self.form.browser.on_navigation_completed.assert_not_called()
             untrusted = SimpleNamespace(Source="https://example.com", TryGetWebMessageAsString=Mock())
             self.view.WebMessageReceived.fire(None, untrusted)
             self.view.WebMessageReceived.fire(None, SimpleNamespace(
-                Source="about:blank", TryGetWebMessageAsString=Mock(side_effect=ValueError),
+                Source=DOCUMENT_URL, TryGetWebMessageAsString=Mock(side_effect=ValueError),
             ))
             untrusted.TryGetWebMessageAsString.assert_not_called()
             dispatch.assert_not_called()
             self.timer.Tick.fire(None, None)
             poll.assert_not_called()
             self.view.WebMessageReceived.fire(None, SimpleNamespace(
-                Source="about:blank", TryGetWebMessageAsString=lambda: '{"id":1,"endpoint":"devices"}',
+                Source=DOCUMENT_URL, TryGetWebMessageAsString=lambda: '{"id":1,"endpoint":"devices"}',
             ))
             self.form.browser.on_script_notify.assert_not_called()
             self.timer.Tick.fire(None, None)
@@ -122,6 +145,35 @@ class WindowsWindowTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "test startup error"):
             run_window(PAGE, Mock(), Mock())
         self.timer.Dispose.assert_called_once_with()
+
+    def test_mapper_navigation_failure_is_reported(self):
+        def run_gui(**_options):
+            self.before_show.fire()
+            self.view.NavigationStarting.fire(None, SimpleNamespace(Uri=DOCUMENT_URL, NavigationId=2))
+            self.view.NavigationCompleted.fire(None, SimpleNamespace(
+                IsSuccess=False, NavigationId=2, WebErrorStatus="UnexpectedError",
+            ))
+            self.timer.Tick.fire(None, None)
+
+        self.webview.start.side_effect = run_gui
+        with self.assertRaisesRegex(RuntimeError, "UnexpectedError"):
+            run_window(PAGE, Mock(), Mock())
+
+    def test_mapper_starts_once_when_the_control_initializes_later(self):
+        def run_gui(**_options):
+            self.view.CoreWebView2 = None
+            self.before_show.fire()
+            self.timer.Tick.fire(None, None)
+            self.core.Navigate.assert_not_called()
+            self.view.CoreWebView2 = self.core
+            self.view.CoreWebView2InitializationCompleted.fire(self.view, SimpleNamespace(IsSuccess=True))
+            self.timer.Tick.fire(None, None)
+            self.timer.Tick.fire(None, None)
+
+        self.webview.start.side_effect = run_gui
+        run_window(PAGE, Mock(), Mock())
+        self.core.SetVirtualHostNameToFolderMapping.assert_called_once()
+        self.core.Navigate.assert_called_once_with(DOCUMENT_URL)
 
     def test_missing_first_request_reports_the_stalled_phase(self):
         def run_gui(**_options):
