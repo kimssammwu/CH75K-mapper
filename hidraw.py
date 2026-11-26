@@ -7,7 +7,7 @@ import os
 import stat
 import struct
 
-from hid_common import COMPANION_PAGE, CONFIG_PAGE, USB_IDS, HidrawError
+from hid_common import COMPANION_PAGE, CONFIG_PAGE, USB_IDS, HidrawAccessError, HidrawError
 from hid_common import MAX_DESCRIPTOR as _MAX_DESCRIPTOR
 from hid_common import VENDOR_COLLECTIONS as _VENDOR_COLLECTIONS
 from hid_common import descriptor_features as _descriptor_features
@@ -136,8 +136,8 @@ class Hidraw:
         except OSError as exc:
             if fd is not None:
                 os.close(fd)
-            if isinstance(exc, PermissionError):
-                raise HidrawError(f"{self.device.path} 접근 권한이 없습니다. CH75K udev 설정을 확인하세요.") from exc
+            if fd is None and isinstance(exc, PermissionError):
+                raise HidrawAccessError(self.device) from exc
             if isinstance(exc, BlockingIOError):
                 raise HidrawError(f"{self.device.path}: 다른 CH75K 도구가 사용 중입니다.") from exc
             raise HidrawError(f"{self.device.path}: {exc.strerror or exc}") from exc

@@ -11,6 +11,14 @@ class HidrawError(RuntimeError):
     """The interface could not be found, verified or used."""
 
 
+class HidrawAccessError(HidrawError):
+    """Linux denied opening a previously discovered hidraw interface."""
+
+    def __init__(self, device):
+        super().__init__(f"{device.path} 접근 권한이 없습니다. CH75K udev 설정을 확인하세요.")
+        self.device = device
+
+
 def descriptor_features(descriptor: bytes) -> dict[tuple[int, int], dict[int, int]]:
     """Return top-level application usages and matching feature report lengths."""
     offset = 0

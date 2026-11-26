@@ -81,8 +81,8 @@ def _snapshot(link: SettingsLink, include_macros: bool) -> tuple[int, bytes]:
     return base, data
 
 
-def read_profile(selector: str | None) -> str:
-    device = select_device(selector)
+def read_profile(selector: str | Device | None) -> str:
+    device = selector if isinstance(selector, Device) else select_device(selector)
     with Hidraw(device) as hid:
         base, data = _snapshot(SettingsLink(hid, device.feature_sizes[REPORT_ID]), False)
     lines = [f"CH75K 버튼 배열 확인 · 프로필 주소 0x{base:04X}"]
@@ -170,11 +170,11 @@ def _write_and_verify(link: SettingsLink, base: int, changes: list[Change], back
             f"저장과 읽기 검증을 마쳤지만 USB 설정 모드를 종료하지 못했습니다. 백업 {backup}\n{exc}") from exc
 
 
-def apply_profile(selector: str | None, profile: dict) -> str:
+def apply_profile(selector: str | Device | None, profile: dict) -> str:
     keys = parse_profile(profile)
     if not keys:
         raise ValueError("변경할 버튼 설정을 입력하세요.")
-    device = select_device(selector)
+    device = selector if isinstance(selector, Device) else select_device(selector)
     with Hidraw(device) as hid:
         link = SettingsLink(hid, device.feature_sizes[REPORT_ID])
         base, original = _snapshot(link, any(action.key is None for action in keys.values()))

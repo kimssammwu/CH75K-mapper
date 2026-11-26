@@ -451,6 +451,10 @@
   window.ch75kReply = (id, result) => {
     const request = pending.get(id);
     if (!request) return;
+    if (typeof result?.progress === "string") {
+      showMessage(result.progress);
+      return;
+    }
     pending.delete(id);
     clearTimeout(request.timer);
     if (!isObject(result)) request.reject(new Error("CH75K 도구의 응답을 처리하지 못했습니다."));

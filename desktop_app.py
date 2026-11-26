@@ -4,14 +4,19 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 from pathlib import Path
 from queue import Empty, Full, Queue, SimpleQueue
+import shutil
+import struct
+import subprocess
 import sys
 from tempfile import NamedTemporaryFile, TemporaryDirectory
 from threading import Event, Thread
+import wave
 
 from ch75k import apply_profile, find_devices, preview_profile, read_profile, state_directory
-from hid_common import HidrawError
+from hid_common import HidrawAccessError, HidrawError
 from protocol import ProtocolError
 from settings import BUTTONS
 
@@ -59,6 +64,43 @@ def _save_draft(path: Path, content: str):
             temporary.unlink(missing_ok=True)
 
 
+def _play_connection_sound():
+    """Play a short, low-volume chime through the system audio player."""
+    commands = (("/usr/bin/afplay",),) if sys.platform == "darwin" else (
+        ("pw-play",), ("paplay",), ("aplay", "-q"),
+    )
+    players = [(executable, *options) for name, *options in commands
+               if (executable := shutil.which(name))]
+    if not players:
+        return
+    sample_rate = 24_000
+    frames = bytearray()
+    for index, frequency in enumerate((560, 760)):
+        if index:
+            frames.extend(b"\0\0" * (sample_rate // 100))
+        length = sample_rate * 9 // 100
+        for position in range(length):
+            envelope = math.sin(math.pi * position / length) ** 2
+            amplitude = math.sin(2 * math.pi * frequency * position / sample_rate)
+            frames.extend(struct.pack("<h", int(1800 * envelope * amplitude)))
+    try:
+        with NamedTemporaryFile(suffix=".wav") as audio:
+            with wave.open(audio, "wb") as wav:
+                wav.setparams((1, 2, sample_rate, 0, "NONE", "not compressed"))
+                wav.writeframes(frames)
+            for player in players:
+                try:
+                    result = subprocess.run([*player, audio.name], stdin=subprocess.DEVNULL,
+                                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=2)
+                except (OSError, subprocess.TimeoutExpired):
+                    continue
+                if result.returncode == 0:
+                    return
+    except OSError:
+        # Audio is optional; connection detection remains available.
+        pass
+
+
 class DesktopBridge:
     """Move WebView commands to a worker and replies back to the UI thread."""
 
@@ -69,9 +111,11 @@ class DesktopBridge:
         self.smoke_passed = False
         self.smoke_error = ""
         self.previewed = False
+        self.device_present = False
         self.commands = Queue(maxsize=128)
         self.replies = SimpleQueue()
         self.stopped = Event()
+        self.window_closed = Event()
         self.thread = Thread(target=self._run, name="CH75K commands")
         self.thread.start()
 
@@ -105,6 +149,7 @@ class DesktopBridge:
                 return replies, self.stopped.is_set() and not replies
 
     def close(self):
+        self.window_closed.set()
         self.commands.put(None)
         self.thread.join()
 
@@ -114,7 +159,7 @@ class DesktopBridge:
             try:
                 if self.stopped.is_set():
                     raise ValueError("매퍼가 종료 중입니다.")
-                reply = self._handle(endpoint, data)
+                reply = self._handle(endpoint, data, request_id=request_id)
             except (OSError, ValueError, HidrawError, ProtocolError, RecursionError) as exc:
                 reply = {"error": str(exc)}
             except Exception as exc:
@@ -123,9 +168,13 @@ class DesktopBridge:
             if endpoint == "quit" or self.smoke_error:
                 self.stopped.set()
 
-    def _handle(self, endpoint: str, data: dict) -> dict:
+    def _handle(self, endpoint: str, data: dict, *, request_id: int) -> dict:
         if endpoint == "devices":
             devices = [] if self.smoke else find_devices()
+            present = bool(devices)
+            if present and not self.device_present:
+                Thread(target=_play_connection_sound, name="CH75K connection sound", daemon=True).start()
+            self.device_present = present
             return {"devices": [{"id": path, "label": label} for path, label in devices]}
         if endpoint == "draft-load":
             return {"profile": _load_draft(self.draft), "revision": self.revision}
@@ -154,7 +203,23 @@ class DesktopBridge:
                 raise ValueError("장치를 선택하고 CH75K 모델을 확인해 주세요.")
             if device not in {path for path, _ in find_devices()}:
                 raise ValueError("선택한 장치를 다시 연결해 주세요.")
-            result = read_profile(device) if endpoint == "read" else apply_profile(device, data.get("profile"))
+            operation = read_profile if endpoint == "read" else apply_profile
+            arguments = (data.get("profile"),) if endpoint == "apply" else ()
+            try:
+                result = operation(device, *arguments)
+            except HidrawAccessError as error:
+                if not sys.platform.startswith("linux") or self.window_closed.is_set():
+                    raise
+                from linux_permissions import request_hid_access
+
+                self.replies.put((request_id, {
+                    "progress": "CH75K USB 접근 권한이 필요합니다. 시스템 인증 창에서 승인해 주세요.",
+                }))
+                request_hid_access(error.device)
+                if self.window_closed.is_set():
+                    raise RuntimeError("창이 닫혀 장치 작업을 취소했습니다.")
+                # Reopen the same identity snapshot, even if a hidraw name has been reused.
+                result = operation(error.device, *arguments)
             return {"message": result}
         raise ValueError("요청한 작업을 찾지 못했습니다.")
 
