@@ -11,12 +11,20 @@ PAGE = Path(__file__).resolve().parents[1] / "mapper.html"
 
 
 class NativeEvent:
+    def __init__(self):
+        self.handlers = []
+
     def __iadd__(self, handler):
-        self.handler = handler
+        self.handlers.append(handler)
+        return self
+
+    def __isub__(self, handler):
+        self.handlers.remove(handler)
         return self
 
     def fire(self, *args):
-        self.handler(*args)
+        for handler in self.handlers:
+            handler(*args)
 
 
 class WindowsWindowTests(unittest.TestCase):
@@ -25,9 +33,16 @@ class WindowsWindowTests(unittest.TestCase):
         self.view = SimpleNamespace(
             CoreWebView2=self.core,
             CoreWebView2InitializationCompleted=NativeEvent(),
+            NavigationCompleted=NativeEvent(),
             NavigationStarting=NativeEvent(),
+            WebMessageReceived=NativeEvent(),
         )
-        self.form = SimpleNamespace(webview=self.view, FormClosed=NativeEvent())
+        self.form = SimpleNamespace(
+            webview=self.view, FormClosed=NativeEvent(), Shown=NativeEvent(),
+            browser=SimpleNamespace(on_script_notify=Mock(), on_navigation_completed=Mock()),
+        )
+        self.view.WebMessageReceived += self.form.browser.on_script_notify
+        self.view.NavigationCompleted += self.form.browser.on_navigation_completed
         self.form.Close = lambda: self.form.FormClosed.fire(None, None)
         self.timer = Mock(Tick=NativeEvent())
         self.before_show = NativeEvent()
@@ -61,9 +76,24 @@ class WindowsWindowTests(unittest.TestCase):
 
             options = self.webview.create_window.call_args.kwargs
             self.assertNotIn("url", options)
-            self.assertLess(options["html"].index("window.pywebview.api.ch75k_post"),
+            self.assertNotIn("js_api", options)
+            self.assertLess(options["html"].index("bridge.postMessage(raw)"),
                             options["html"].index("const nativeBridge"))
-            options["js_api"].ch75k_post('{"id":1,"endpoint":"devices"}')
+            self.view.NavigationCompleted.fire(None, SimpleNamespace(IsSuccess=True))
+            self.form.browser.on_navigation_completed.assert_not_called()
+            untrusted = SimpleNamespace(Source="https://example.com", TryGetWebMessageAsString=Mock())
+            self.view.WebMessageReceived.fire(None, untrusted)
+            self.view.WebMessageReceived.fire(None, SimpleNamespace(
+                Source="about:blank", TryGetWebMessageAsString=Mock(side_effect=ValueError),
+            ))
+            untrusted.TryGetWebMessageAsString.assert_not_called()
+            dispatch.assert_not_called()
+            self.timer.Tick.fire(None, None)
+            poll.assert_not_called()
+            self.view.WebMessageReceived.fire(None, SimpleNamespace(
+                Source="about:blank", TryGetWebMessageAsString=lambda: '{"id":1,"endpoint":"devices"}',
+            ))
+            self.form.browser.on_script_notify.assert_not_called()
             self.timer.Tick.fire(None, None)
             sent, = self.core.PostWebMessageAsJson.call_args.args
             self.assertEqual(json.loads(sent), [[1, {"message": "연결"}]])
@@ -92,3 +122,27 @@ class WindowsWindowTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "test startup error"):
             run_window(PAGE, Mock(), Mock())
         self.timer.Dispose.assert_called_once_with()
+
+    def test_missing_first_request_reports_the_stalled_phase(self):
+        def run_gui(**_options):
+            self.before_show.fire()
+            self.timer.Tick.fire(None, None)
+
+        self.webview.start.side_effect = run_gui
+        with patch("windows_window.monotonic", side_effect=[0, 30]):
+            with self.assertRaisesRegex(RuntimeError, "첫 요청"):
+                run_window(PAGE, Mock(), Mock())
+        self.timer.Dispose.assert_called_once_with()
+
+    def test_native_event_setup_failure_surfaces_when_the_form_shows(self):
+        self.view.WebMessageReceived.handlers.clear()
+        self.form.Close = Mock()
+
+        def run_gui(**_options):
+            self.before_show.fire()
+            self.form.Shown.fire(self.form, None)
+
+        self.webview.start.side_effect = run_gui
+        with self.assertRaisesRegex(RuntimeError, "창을 준비"):
+            run_window(PAGE, Mock(), Mock())
+        self.form.Close.assert_called_once_with()

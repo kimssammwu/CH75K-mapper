@@ -30,10 +30,11 @@ def smoke(executable: Path, *, cwd: Path | None = None):
     if executable.suffix == ".py":
         command.insert(0, sys.executable)
 
-    with tempfile.TemporaryDirectory(prefix="ch75k-desktop-smoke-") as temporary_directory:
+    windows = os.name == "nt"
+    with tempfile.TemporaryDirectory(prefix="ch75k-desktop-smoke-", ignore_cleanup_errors=windows) as temporary_directory:
         workspace = Path(temporary_directory)
-        windows = os.name == "nt"
         result = workspace / "result.txt"
+        diagnostics = result.with_suffix(".log")
         if windows:
             command.extend(("--smoke-result", str(result)))
         env = os.environ.copy()
@@ -70,10 +71,12 @@ def smoke(executable: Path, *, cwd: Path | None = None):
                     with suppress(ProcessLookupError):
                         os.killpg(process.pid, signal.SIGKILL)
                 output, _ = process.communicate()
-                raise RuntimeError(f"CH75K window test timed out.\n{output}") from exc
+                log = diagnostics.read_text(encoding="utf-8", errors="replace") if diagnostics.is_file() else ""
+                raise RuntimeError(f"CH75K window test timed out.\n{output}\n{log}") from exc
             status = result.read_text(encoding="utf-8") if windows and result.is_file() else output
             if process.returncode or SUCCESS_MARKER not in status.splitlines():
-                raise RuntimeError(f"CH75K window test failed ({process.returncode}).\n{status}")
+                log = diagnostics.read_text(encoding="utf-8", errors="replace") if diagnostics.is_file() else ""
+                raise RuntimeError(f"CH75K window test failed ({process.returncode}).\n{status}\n{log}")
 
 
 def check_release_files(executable: Path, documentation: Path, required_files: tuple[str, ...]):

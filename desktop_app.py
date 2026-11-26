@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import argparse
-from contextlib import suppress
+from contextlib import redirect_stderr, redirect_stdout, suppress
+import faulthandler
 from io import BytesIO
 import json
 import math
@@ -310,6 +311,19 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.smoke_result is not None and not args.smoke_test:
         parser.error("--smoke-result requires --smoke-test")
+    if sys.platform == "win32" and args.smoke_result is not None:
+        # A windowed executable has no standard streams for reporting test failures.
+        log_path = args.smoke_result.with_suffix(".log")
+        with log_path.open("w", encoding="utf-8", buffering=1) as log, redirect_stderr(log), redirect_stdout(log):
+            faulthandler.dump_traceback_later(60, file=log)
+            try:
+                return _launch(args)
+            finally:
+                faulthandler.cancel_dump_traceback_later()
+    return _launch(args)
+
+
+def _launch(args: argparse.Namespace) -> int:
     try:
         if not PAGE.is_file():
             raise FileNotFoundError(PAGE)
@@ -321,7 +335,9 @@ def main(argv: list[str] | None = None) -> int:
                 print(SMOKE_SUCCESS, flush=True)
         else:
             _run_window(PAGE, DesktopBridge(state_directory() / "draft.json"))
-    except (OSError, RuntimeError, ValueError) as exc:
+    except Exception as exc:
+        if args.smoke_result is None and not isinstance(exc, (OSError, RuntimeError, ValueError)):
+            raise
         message = f"CH75K 매퍼를 열지 못했습니다. {exc}"
         if args.smoke_result is not None:
             with suppress(OSError):

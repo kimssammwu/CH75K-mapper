@@ -11,23 +11,16 @@ RUNTIME_MESSAGE = "Microsoft Edge WebView2 Evergreen 런타임을 설치한 뒤 
 RUNTIME_REGISTRY_KEY = r"Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
 DOCUMENT_URL = "about:blank"
 
-# Define the mapper's existing bridge before its script executes. Wait for
-# pywebview to expose the one native method, and submit in page request order.
+# Define the mapper's bridge before its script executes. WebView2 delivers
+# these messages in order without a second injected JavaScript API.
 BRIDGE_SCRIPT = """
 <script>
 (() => {
-  const ready = new Promise(resolve => window.addEventListener("pywebviewready", resolve, {once:true}));
-  let requests = ready;
+  const bridge = window.chrome.webview;
   window.webkit ??= {};
   window.webkit.messageHandlers ??= {};
-  window.webkit.messageHandlers.ch75k = {
-    postMessage(raw) {
-      requests = requests.then(() => window.pywebview.api.ch75k_post(raw)).catch(() => {
-        window.ch75kReply?.(JSON.parse(raw).id, {error:"CH75K 요청을 Windows에서 전달하지 못했습니다."});
-      });
-    }
-  };
-  window.chrome.webview.addEventListener("message", event => {
+  window.webkit.messageHandlers.ch75k = {postMessage: raw => bridge.postMessage(raw)};
+  bridge.addEventListener("message", event => {
     for (const [id, response] of event.data) window.ch75kReply?.(id, response);
   });
 })();
@@ -49,14 +42,6 @@ def _require_edge_runtime():
         except (OSError, AttributeError, ValueError):
             continue
     raise RuntimeError(RUNTIME_MESSAGE)
-
-
-class _BridgeAPI:
-    def __init__(self, dispatch):
-        self._dispatch = dispatch
-
-    def ch75k_post(self, raw):
-        self._dispatch(raw)
 
 
 def _mapper_document(page: Path) -> str:
@@ -90,16 +75,15 @@ def run_window(page: Path, dispatch, poll) -> None:
         "ALLOW_FILE_URLS": False,
         "OPEN_EXTERNAL_LINKS_IN_BROWSER": False,
     })
-    window = webview.create_window("CH75K 매퍼", html=html, js_api=_BridgeAPI(dispatch),
+    window = webview.create_window("CH75K 매퍼", html=html,
                                    width=1280, height=900, min_size=(700, 600))
     failure = None
 
-    def prepare():
+    def prepare(form):
         nonlocal failure
-        form = window.native
         view = form.webview
-        view.AllowExternalDrop = False
-        deadline = monotonic() + 15
+        deadline = monotonic() + 25
+        received_request = False
         timer = Timer()
         timer.Interval = 35
 
@@ -111,15 +95,35 @@ def run_window(page: Path, dispatch, poll) -> None:
             if not args.IsSuccess:
                 failure = RuntimeError(f"{RUNTIME_MESSAGE}\n{args.InitializationException}")
 
+        def receive_message(_sender, args):
+            nonlocal received_request
+            if str(args.Source) != DOCUMENT_URL:
+                return
+            try:
+                payload = args.TryGetWebMessageAsString()
+            except Exception:
+                # WebView2 raises if a page sends an object instead of a string.
+                return
+            if isinstance(payload, str):
+                dispatch(payload)
+                received_request = True
+
+        def navigation_finished(_sender, args):
+            nonlocal failure
+            if not args.IsSuccess and not received_request:
+                failure = RuntimeError(f"Windows WebView2가 CH75K 화면을 열지 못했습니다. {args.WebErrorStatus}")
+
         def drain(_sender, _args):
             nonlocal failure
             try:
                 if failure is None:
                     core = view.CoreWebView2
-                    if core is None:
-                        if monotonic() < deadline:
-                            return
-                        raise RuntimeError(RUNTIME_MESSAGE)
+                    if not received_request:
+                        if monotonic() >= deadline:
+                            if core is None:
+                                raise RuntimeError(RUNTIME_MESSAGE)
+                            raise RuntimeError("Windows WebView2에서 CH75K 화면의 첫 요청을 받지 못했습니다.")
+                        return
                     replies, stopped = poll()
                     if replies:
                         core.PostWebMessageAsJson(json.dumps(replies, allow_nan=False))
@@ -134,13 +138,31 @@ def run_window(page: Path, dispatch, poll) -> None:
             timer.Stop()
             timer.Dispose()
 
+        view.AllowExternalDrop = False
+        # pywebview 6.2.1 installs these when it creates its native control.
+        # Use that control and its dialogs without injecting its own RPC layer.
+        view.WebMessageReceived -= form.browser.on_script_notify
+        view.NavigationCompleted -= form.browser.on_navigation_completed
+        view.WebMessageReceived += receive_message
         view.NavigationStarting += keep_local
+        view.NavigationCompleted += navigation_finished
         view.CoreWebView2InitializationCompleted += initialized
         form.FormClosed += stop_timer
         timer.Tick += drain
         timer.Start()
 
-    window.events.before_show += prepare
+    def before_show():
+        nonlocal failure
+        form = window.native
+        try:
+            prepare(form)
+        except Exception as exc:
+            # pywebview logs and swallows before_show errors. Close after the
+            # form is shown so Python gets the actual error and can report it.
+            failure = RuntimeError(f"Windows WebView2 창을 준비하지 못했습니다. {exc}")
+            form.Shown += lambda sender, _args: sender.Close()
+
+    window.events.before_show += before_show
     webview.start(gui="edgechromium", http_server=False, private_mode=True)
     if failure is not None:
         raise failure
