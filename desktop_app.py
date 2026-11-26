@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import suppress
+from io import BytesIO
 import json
 import math
 from pathlib import Path
@@ -23,6 +25,7 @@ from settings import BUTTONS
 
 PAGE = Path(__file__).with_name("mapper.html")
 MAX_MESSAGE_BYTES = 65_536
+SMOKE_SUCCESS = "CH75K_PORTLESS_SMOKE_OK"
 
 
 def _draft_json(profile: object) -> str:
@@ -66,13 +69,6 @@ def _save_draft(path: Path, content: str):
 
 def _play_connection_sound():
     """Play a short, low-volume chime through the system audio player."""
-    commands = (("/usr/bin/afplay",),) if sys.platform == "darwin" else (
-        ("pw-play",), ("paplay",), ("aplay", "-q"),
-    )
-    players = [(executable, *options) for name, *options in commands
-               if (executable := shutil.which(name))]
-    if not players:
-        return
     sample_rate = 24_000
     frames = bytearray()
     for index, frequency in enumerate((560, 760)):
@@ -83,11 +79,29 @@ def _play_connection_sound():
             envelope = math.sin(math.pi * position / length) ** 2
             amplitude = math.sin(2 * math.pi * frequency * position / sample_rate)
             frames.extend(struct.pack("<h", int(1800 * envelope * amplitude)))
+    buffer = BytesIO()
+    with wave.open(buffer, "wb") as wav:
+        wav.setparams((1, 2, sample_rate, 0, "NONE", "not compressed"))
+        wav.writeframes(frames)
+    sound = buffer.getvalue()
+    if sys.platform == "win32":
+        import winsound
+
+        with suppress(RuntimeError):
+            winsound.PlaySound(sound, winsound.SND_MEMORY | winsound.SND_NODEFAULT)
+        return
+
+    commands = (("/usr/bin/afplay",),) if sys.platform == "darwin" else (
+        ("pw-play",), ("paplay",), ("aplay", "-q"),
+    )
+    players = [(executable, *options) for name, *options in commands
+               if (executable := shutil.which(name))]
+    if not players:
+        return
     try:
         with NamedTemporaryFile(suffix=".wav") as audio:
-            with wave.open(audio, "wb") as wav:
-                wav.setparams((1, 2, sample_rate, 0, "NONE", "not compressed"))
-                wav.writeframes(frames)
+            audio.write(sound)
+            audio.flush()
             for player in players:
                 try:
                     result = subprocess.run([*player, audio.name], stdin=subprocess.DEVNULL,
@@ -228,6 +242,8 @@ def _run_window(page: Path, bridge: DesktopBridge):
     try:
         if sys.platform == "darwin":
             from macos_window import run_window
+        elif sys.platform == "win32":
+            from windows_window import run_window
         else:
             from linux_window import run_window
         run_window(page, bridge.dispatch, bridge.poll)
@@ -285,22 +301,37 @@ def _smoke_test():
         profile = _load_draft(draft)
         if not bridge.smoke_passed or "bottom-center" not in profile["keys"]:
             raise RuntimeError(bridge.smoke_error or "3D 매크로 편집과 초안 저장을 확인하지 못했습니다.")
-    print("CH75K_PORTLESS_SMOKE_OK", flush=True)
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="CH75K 데스크톱 매퍼")
     parser.add_argument("--smoke-test", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--smoke-result", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
+    if args.smoke_result is not None and not args.smoke_test:
+        parser.error("--smoke-result requires --smoke-test")
     try:
         if not PAGE.is_file():
             raise FileNotFoundError(PAGE)
         if args.smoke_test:
             _smoke_test()
+            if args.smoke_result is not None:
+                args.smoke_result.write_text(SMOKE_SUCCESS, encoding="utf-8")
+            elif sys.stdout is not None:
+                print(SMOKE_SUCCESS, flush=True)
         else:
             _run_window(PAGE, DesktopBridge(state_directory() / "draft.json"))
     except (OSError, RuntimeError, ValueError) as exc:
-        print(f"CH75K 매퍼를 열지 못했습니다. {exc}", file=sys.stderr)
+        message = f"CH75K 매퍼를 열지 못했습니다. {exc}"
+        if args.smoke_result is not None:
+            with suppress(OSError):
+                args.smoke_result.write_text(message, encoding="utf-8")
+        if sys.stderr is not None:
+            print(message, file=sys.stderr)
+        elif sys.platform == "win32" and not args.smoke_test:
+            from ctypes import windll
+
+            windll.user32.MessageBoxW(None, message, "CH75K 매퍼", 0x10)
         return 1
     return 0
 

@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 from queue import Queue
+import sys
 from tempfile import TemporaryDirectory
 from time import monotonic, sleep
 from types import SimpleNamespace
@@ -88,6 +89,7 @@ class DesktopBridgeTests(unittest.TestCase):
         self.assertTrue(self.bridge.stopped.wait(1))
         self.assertEqual(self.bridge.poll(), ([], True))
 
+    @unittest.skipIf(sys.platform == "win32", "The Linux hidraw permission helper uses POSIX APIs.")
     def test_linux_permission_retries_read_or_apply_once_with_original_device(self):
         device_path = "/dev/hidraw8"
         device = SimpleNamespace(path=Path(device_path))
@@ -110,6 +112,7 @@ class DesktopBridgeTests(unittest.TestCase):
                 self.assertEqual(len(self.progress), 1)
                 self.assertIn("시스템 인증", self.progress[0])
 
+    @unittest.skipIf(sys.platform == "win32", "The Linux hidraw permission helper uses POSIX APIs.")
     def test_permission_cancellation_and_workspace_errors_do_not_retry(self):
         device_path = "/dev/hidraw8"
         device = SimpleNamespace(path=Path(device_path))
@@ -130,6 +133,7 @@ class DesktopBridgeTests(unittest.TestCase):
             apply.assert_called_once_with(device_path, PROFILE)
             authorize.assert_not_called()
 
+    @unittest.skipIf(sys.platform == "win32", "The Linux hidraw permission helper uses POSIX APIs.")
     def test_linux_open_error_after_authorization_does_not_prompt_again(self):
         device_path = "/dev/hidraw8"
         device = SimpleNamespace(path=Path(device_path))
@@ -143,6 +147,7 @@ class DesktopBridgeTests(unittest.TestCase):
             self.assertEqual(read.call_args_list, [call(device_path), call(device)])
             authorize.assert_called_once_with(device)
 
+    @unittest.skipIf(sys.platform == "win32", "The Linux hidraw permission helper uses POSIX APIs.")
     def test_elevated_rule_matches_the_manual_install_rule(self):
         from linux_permissions import _ROOT_PROGRAM, _RULE
 

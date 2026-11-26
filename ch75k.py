@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Native Linux configurator for the inote CH75K macro keypad."""
+"""Native desktop configurator for the inote CH75K macro keypad."""
 
 from __future__ import annotations
 
@@ -21,10 +21,12 @@ from settings import (
 
 if sys.platform == "darwin":
     from macos_hid import Device, Hidraw, discover
+elif sys.platform == "win32":
+    from windows_hid import Device, Hidraw, discover
 elif sys.platform.startswith("linux"):
     from hidraw import Device, Hidraw, discover
 else:
-    raise RuntimeError("CH75K requires macOS or Linux.")
+    raise RuntimeError("CH75K requires Windows, macOS or Linux.")
 
 
 def candidates() -> list[Device]:
@@ -96,8 +98,12 @@ def read_profile(selector: str | Device | None) -> str:
 
 
 def state_directory() -> Path:
-    default_state = (Path.home() / "Library" / "Application Support" if sys.platform == "darwin"
-                     else Path.home() / ".local" / "state")
+    if sys.platform == "darwin":
+        default_state = Path.home() / "Library" / "Application Support"
+    elif sys.platform == "win32":
+        default_state = os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local"
+    else:
+        default_state = Path.home() / ".local" / "state"
     return Path(os.environ.get("XDG_STATE_HOME") or default_state) / "ch75k-native"
 
 
@@ -111,12 +117,15 @@ def _persist_backup(device: Device, base: int, changes: list[Change]) -> Path:
         "blocks": [{"address": change.address, "before": change.before.hex(),
                     "after": change.after.hex()} for change in changes],
     }
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC, 0o600)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_CLOEXEC", 0)
+    fd = os.open(path, flags, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as file:
         json.dump(payload, file, indent=2)
         file.write("\n")
         file.flush()
         os.fsync(file.fileno())
+    if sys.platform == "win32":
+        return path
     directory = os.open(root, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | os.O_CLOEXEC)
     try:
         try:
@@ -199,10 +208,10 @@ def main(argv: list[str] | None = None) -> int:
     preview = commands.add_parser("preview", help="키보드 없이 JSON 프로필 검사")
     preview.add_argument("profile", type=Path)
     read = commands.add_parser("read", help="연결된 CH75K의 키 설정 읽기")
-    read.add_argument("--device", help="hidraw 장치 선택")
+    read.add_argument("--device", help="HID 장치 선택")
     apply = commands.add_parser("apply", help="CH75K에 변경 사항 저장하고 다시 읽기")
     apply.add_argument("profile", type=Path)
-    apply.add_argument("--device", help="hidraw 장치 선택")
+    apply.add_argument("--device", help="HID 장치 선택")
     apply.add_argument("--confirm-ch75k", action="store_true", help="실제로 연결한 모델이 CH75K임을 확인")
     args = parser.parse_args(argv)
     try:

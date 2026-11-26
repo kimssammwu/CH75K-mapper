@@ -1,23 +1,39 @@
 # CH75K 매퍼
 
-아이노트 CH75K와 호환되는 데스크톱 설정 도구입니다. 두 OS에서 앱에 내장된 웹뷰가 같은 3D 편집기를 표시합니다. 편집기는 Python과 직접 메시지를 주고받으므로 로컬 서버나 포트가 필요 없습니다. macOS에서는 IOKit, Linux에서는 `hidraw`로 키패드의 내장 설정을 읽고 씁니다.
+아이노트 CH75K와 호환되는 데스크톱 설정 도구입니다. Windows, macOS, Linux에서 앱에 내장된 웹뷰가 같은 3D 편집기를 표시합니다. 편집기는 Python과 직접 메시지를 주고받으므로 로컬 서버나 포트가 필요 없습니다. Windows HID, macOS IOKit, Linux `hidraw`로 키패드의 내장 설정을 읽고 씁니다.
 
 ## GitHub Actions로 빌드하고 다운로드
 
-1. 소스 ZIP을 풀고 `CH75K-Mapper/` 안의 파일을 GitHub 저장소 기본 브랜치에 둡니다. 숨김 폴더인 `.github/`도 포함합니다.
-2. 저장소 쓰기 권한으로 **Actions → Build CH75K → Run workflow**에서 빌드를 실행합니다.
-3. 완료된 실행의 **Artifacts**에서 원하는 OS의 패키지를 다운로드합니다. [GitHub 워크플로 수동 실행 안내](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow)
+[GitHub Releases](https://github.com/kimssammwu/CH75K-mapper/releases)에서 운영체제에 맞는 파일과 `SHA256SUMS`를 내려받습니다. 버전 태그를 올리면 GitHub Actions가 모든 패키지의 실행 테스트를 거친 뒤 릴리스를 게시합니다.
+
+직접 빌드하려면 **Actions → Build CH75K → Run workflow**에서 실행하고, 완료된 실행의 **Artifacts**에서 내려받습니다. [GitHub 워크플로 수동 실행 안내](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow)
 
 | 대상 | 다운로드 파일 |
 | --- | --- |
 | Linux x86_64 | `CH75K-Linux-x86_64-portable.tar.gz` |
 | macOS Apple Silicon | `CH75K-macOS-arm64.zip` |
 | macOS Intel | `CH75K-macOS-x86_64.zip` |
+| Windows x86_64 | `CH75K-Windows-x86_64-portable.zip` |
+
+### 다운로드 검증
+
+GitHub CLI로 `SHA256SUMS`의 서명과 빌드 출처를 확인합니다. `v0.1.0`은 내려받은 릴리스의 태그로 바꿉니다. 같은 명령에서 `SHA256SUMS` 대신 패키지 이름을 지정해 패키지를 직접 검증할 수도 있습니다. [GitHub 증명 검증 안내](https://cli.github.com/manual/gh_attestation_verify)
+
+```sh
+gh attestation verify SHA256SUMS --repo kimssammwu/CH75K-mapper --source-ref refs/tags/v0.1.0 --deny-self-hosted-runners
+```
+
+패키지의 SHA-256을 계산해 `SHA256SUMS`에서 같은 파일 이름의 값과 비교합니다.
+
+- Linux는 `sha256sum CH75K-Linux-x86_64-portable.tar.gz`를 실행합니다.
+- macOS는 `shasum -a 256 CH75K-macOS-arm64.zip`을 실행합니다. Intel은 파일 이름을 바꿉니다.
+- Windows PowerShell에서는 `Get-FileHash -Algorithm SHA256 .\CH75K-Windows-x86_64-portable.zip`을 실행합니다.
 
 ## 실행
 
 - **Linux**는 tar.gz에서 `CH75K`를 꺼내 그 파일만 실행하면 됩니다. 파일을 다른 폴더에 옮겨도 동작합니다. 권한 규칙과 사용 안내도 압축에 들어 있습니다.
 - **macOS**는 ZIP을 풀고 `CH75K.app`을 엽니다. 배포용 Developer ID 서명과 Apple 공증은 별도 단계입니다. [Apple 공증 안내](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution)
+- **Windows**는 ZIP을 풀고 `CH75K.exe`를 엽니다. Windows 10 또는 11 x64와 Microsoft Edge WebView2 Runtime이 필요합니다. [Microsoft WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/#download)
 - **소스**는 Python 3.10 이상에서 `python3 desktop_app.py`로 실행합니다.
 
 실행하면 **CH75K 매퍼** 창이 열립니다. 확인을 마치면 창을 닫거나 화면 상단의 **종료**를 누릅니다.
@@ -28,7 +44,7 @@ Linux 단일 파일은 실행할 때 내부 파일을 실행 가능한 임시 �
 
 ## 로컬 빌드
 
-두 OS에서 같은 명령을 사용합니다. 실행하려는 OS에서 빌드하고, GitHub Actions와 동일한 Python 3.12를 사용합니다.
+실행하려는 OS에서 빌드하고, GitHub Actions와 동일한 Python 3.12를 사용합니다.
 
 ```sh
 python3 -m venv .venv
@@ -36,7 +52,15 @@ python3 -m venv .venv
 .venv/bin/python build.py --output dist --archive
 ```
 
-Linux는 `dist/CH75K-Linux-<아키텍처>` 단일 실행 파일과 `-portable.tar.gz`를 생성합니다. macOS는 `dist/CH75K.app`과 ZIP을 생성하며, 기본 아키텍처는 빌드하는 Python을 따릅니다.
+Windows에서는 PowerShell로 실행합니다.
+
+```powershell
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements-build.txt -r requirements-windows.txt
+.\.venv\Scripts\python.exe build.py --output dist --archive
+```
+
+Linux는 단일 실행 파일과 tar.gz를, macOS는 `CH75K.app`과 ZIP을, Windows는 단일 EXE와 ZIP을 `dist/`에 생성합니다.
 
 앱 빌드는 포함된 `mapper.html`을 사용합니다. 3D 화면을 수정한 뒤 다시 만들려면 Node.js 20 이상에서 `node ui/build.mjs`를 실행합니다. [공개 범위와 라이선스 검토](PUBLICATION.md) · [제3자 고지](THIRD_PARTY_NOTICES.md)
 
@@ -58,7 +82,7 @@ Linux는 `dist/CH75K-Linux-<아키텍처>` 단일 실행 파일과 `-portable.ta
 
 ## USB 접근 권한
 
-macOS에서는 앱을 일반 사용자로 실행합니다. 시스템에서 HID 장치 접근을 거부하면 macOS가 제공한 권한 안내를 확인하세요.
+macOS와 Windows에서는 앱을 일반 사용자로 실행합니다. Windows에서 장치를 열 수 없으면 CH75K를 열어 둔 다른 설정 도구를 종료하고 다시 시도하세요.
 
 ### Linux
 
@@ -80,7 +104,7 @@ python3 ch75k.py read
 python3 ch75k.py apply profile.json --confirm-ch75k
 ```
 
-장치가 여러 개면 `read`나 `apply`에 `--device /dev/hidrawN`을 추가합니다. JSON 예시는 다음과 같습니다.
+장치가 여러 개면 `read`나 `apply`에 `--device`와 함께 `devices`가 표시한 식별자를 지정합니다. JSON 예시는 다음과 같습니다.
 
 ```json
 {
@@ -102,8 +126,8 @@ python3 ch75k.py apply profile.json --confirm-ch75k
 
 ## 검증 범위
 
-장치의 기능을 대조한 뒤, 두 OS에서 HID Report 7의 길이와 장치 식별 정보를 실제 디스크립터에서 확인하도록 구현했습니다. [Linux hidraw 문서](https://docs.kernel.org/hid/hidraw.html) · [Apple IOKit 문서](https://developer.apple.com/documentation/iokit/1588659-iohiddevicegetreport)
+장치의 HID Report 7 길이와 인터페이스 식별 정보를 확인한 뒤 통신합니다. [Linux hidraw 문서](https://docs.kernel.org/hid/hidraw.html) · [Apple IOKit 문서](https://developer.apple.com/documentation/iokit/1588659-iohiddevicegetreport) · [Windows HID 문서](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/hidsdi/nf-hidsdi-hidd_getfeature)
 
 USB ID를 다른 모델도 사용하므로, 앱은 제조사 CH75K의 설정 헤더와 6버튼 매트릭스가 맞는 장치에만 씁니다. 알려진 프로필이 없는 초기 장치나 다른 펌웨어는 설정 쓰기가 거부될 수 있습니다. 기존 매크로를 보존할 빈 공간을 확인하지 못한 경우에도 쓰지 않습니다.
 
-GitHub Actions에서 패키지를 풀어 앱 창, 장치 조회, 매크로 미리 보기와 종료를 검사합니다. 실제 키패드에서 동작하는 매크로와 장치 접근은 별도 연결 시험이 필요합니다. 백업은 Linux에서 `${XDG_STATE_HOME:-~/.local/state}/ch75k-native/backups`, macOS에서 `~/Library/Application Support/ch75k-native/backups`에 남습니다. `XDG_STATE_HOME`을 지정하면 백업 루트가 바뀝니다.
+GitHub Actions에서 패키지를 풀어 앱 창, 장치 조회, 매크로 미리 보기와 종료를 검사합니다. 실제 키패드에서 동작하는 매크로와 장치 접근은 별도 연결 시험이 필요합니다. 백업은 Linux에서 `${XDG_STATE_HOME:-~/.local/state}/ch75k-native/backups`, macOS에서 `~/Library/Application Support/ch75k-native/backups`, Windows에서 `%LOCALAPPDATA%\ch75k-native\backups`에 남습니다. `XDG_STATE_HOME`을 지정하면 백업 루트가 바뀝니다.

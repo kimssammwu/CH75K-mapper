@@ -13,6 +13,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+from zipfile import ZipFile
 
 
 RELEASE_FILES = (
@@ -31,6 +32,10 @@ def smoke(executable: Path, *, cwd: Path | None = None):
 
     with tempfile.TemporaryDirectory(prefix="ch75k-desktop-smoke-") as temporary_directory:
         workspace = Path(temporary_directory)
+        windows = os.name == "nt"
+        result = workspace / "result.txt"
+        if windows:
+            command.extend(("--smoke-result", str(result)))
         env = os.environ.copy()
         for variable, name in (
             ("HOME", "home"),
@@ -43,21 +48,32 @@ def smoke(executable: Path, *, cwd: Path | None = None):
             directory = workspace / name
             directory.mkdir()
             env[variable] = str(directory)
+        if windows:
+            env.update(TMP=env["TMPDIR"], TEMP=env["TMPDIR"], LOCALAPPDATA=env["XDG_DATA_HOME"])
 
         with subprocess.Popen(
-            command, cwd=cwd, env=env, start_new_session=True, stdin=subprocess.DEVNULL,
+            command, cwd=cwd, env=env, start_new_session=not windows, stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, encoding="utf-8", errors="replace",
         ) as process:
             try:
-                output, _ = process.communicate(timeout=45)
+                output, _ = process.communicate(timeout=90 if windows else 45)
             except subprocess.TimeoutExpired as exc:
                 # Killing the bootloader alone could leave the onefile child running.
-                with suppress(ProcessLookupError):
-                    os.killpg(process.pid, signal.SIGKILL)
+                if windows:
+                    taskkill = Path(os.environ["SystemRoot"]) / "System32" / "taskkill.exe"
+                    with suppress(OSError, subprocess.TimeoutExpired):
+                        subprocess.run([str(taskkill), "/F", "/T", "/PID", str(process.pid)],
+                                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=8)
+                    if process.poll() is None:
+                        process.kill()
+                else:
+                    with suppress(ProcessLookupError):
+                        os.killpg(process.pid, signal.SIGKILL)
                 output, _ = process.communicate()
                 raise RuntimeError(f"CH75K window test timed out.\n{output}") from exc
-            if process.returncode or SUCCESS_MARKER not in output.splitlines():
-                raise RuntimeError(f"CH75K window test failed ({process.returncode}).\n{output}")
+            status = result.read_text(encoding="utf-8") if windows and result.is_file() else output
+            if process.returncode or SUCCESS_MARKER not in status.splitlines():
+                raise RuntimeError(f"CH75K window test failed ({process.returncode}).\n{status}")
 
 
 def check_release_files(executable: Path, documentation: Path, required_files: tuple[str, ...]):
@@ -78,7 +94,21 @@ def smoke_archive(archive: Path):
         workspace = Path(temporary_directory)
         extracted = workspace / "extracted"
         extracted.mkdir()
-        if archive.name.endswith("-portable.tar.gz"):
+        if archive.name.startswith("CH75K-Windows-") and archive.name.endswith("-portable.zip"):
+            with ZipFile(archive) as contents:
+                contents.extractall(extracted)
+            package = extracted / archive.name.removesuffix("-portable.zip")
+            executable = package / "CH75K.exe"
+            check_release_files(executable, package, (*RELEASE_FILES, "licenses/windows/pywebview/licenses/LICENSE"))
+            other_locations = [package / name for name in ("_internal", "mapper.html")]
+            if any(path.exists() for path in other_locations):
+                raise RuntimeError("The Windows package must bundle its dependencies and mapper inside CH75K.exe.")
+            isolated = workspace / "isolated"
+            isolated.mkdir()
+            standalone = isolated / executable.name
+            shutil.copy2(executable, standalone)
+            smoke(standalone, cwd=workspace)
+        elif archive.name.endswith("-portable.tar.gz"):
             with tarfile.open(archive, "r:gz") as contents:
                 contents.extractall(extracted, filter="data")
             package = extracted / archive.name.removesuffix("-portable.tar.gz")

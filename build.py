@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+from importlib.metadata import distribution
 import importlib.util
 from pathlib import Path
 import platform
@@ -15,6 +16,7 @@ import sys
 import sysconfig
 import tarfile
 import tempfile
+from zipfile import ZIP_DEFLATED, ZipFile
 
 
 SOURCE = Path(__file__).resolve().parent
@@ -23,6 +25,8 @@ BUNDLE_ID = "local.ch75k.mapper"
 MAC_ARCHITECTURES = ("arm64", "x86_64", "universal2")
 RELEASE_DOCUMENTS = ("README.md", "PUBLICATION.md", "LICENSE", "NOTICE",
                      "THIRD_PARTY_NOTICES.md", "ui/anatomy/LICENSE")
+WINDOWS_BINDINGS = ("pywebview", "pythonnet", "clr-loader", "cffi", "pycparser",
+                    "bottle", "proxy-tools", "typing-extensions")
 
 
 def release_documents() -> list[tuple[Path, Path]]:
@@ -37,6 +41,20 @@ def release_documents() -> list[tuple[Path, Path]]:
     if license_file is not None:
         documents.append((license_file, Path("licenses/python") / license_file.name))
     return documents
+
+
+def windows_binding_notices() -> list[tuple[Path, Path]]:
+    notices = []
+    for package in WINDOWS_BINDINGS:
+        installed = distribution(package)
+        for resource in installed.files or ():
+            if (resource.parts[0].endswith(".dist-info")
+                    and resource.name.lower().startswith(("license", "copying", "notice"))):
+                source = Path(installed.locate_file(resource))
+                target = Path("licenses", "windows", package, *resource.parts[1:])
+                if source.is_file():
+                    notices.append((source, target))
+    return notices
 
 
 def copy_linux_library_notices(analysis_toc: Path, bundle: Path):
@@ -86,8 +104,9 @@ def copy_linux_library_notices(analysis_toc: Path, bundle: Path):
                 shutil.copy2(common / name, target / name)
 
 
-def build_args(stage: Path, is_mac: bool, target_arch: str | None,
+def build_args(stage: Path, system: str, target_arch: str | None,
                signing_identity: str | None, documents: list[tuple[Path, Path]]) -> list[str]:
+    is_mac = system == "Darwin"
     command = [
         sys.executable, "-m", "PyInstaller",
         "--name", APP_NAME,
@@ -106,6 +125,8 @@ def build_args(stage: Path, is_mac: bool, target_arch: str | None,
         # Put notices in the bundle before PyInstaller signs it.
         for path, relative in documents:
             command.extend(("--add-data", f"{path}:{relative.parent.as_posix()}"))
+    elif system == "Windows":
+        command.extend(("--windowed", "--collect-data", "webview"))
     command.append(str(SOURCE / "desktop_app.py"))
     return command
 
@@ -113,19 +134,26 @@ def build_args(stage: Path, is_mac: bool, target_arch: str | None,
 def build(output: Path, *, archive: bool = False, target_arch: str | None = None,
           signing_identity: str | None = None) -> tuple[Path, ...]:
     system = platform.system()
-    if system not in ("Linux", "Darwin"):
-        raise ValueError("빌드는 Linux와 macOS에서 실행할 수 있습니다.")
+    if system not in ("Linux", "Darwin", "Windows"):
+        raise ValueError("빌드는 Linux, macOS, Windows에서 실행할 수 있습니다.")
     is_mac = system == "Darwin"
+    is_windows = system == "Windows"
     if not is_mac and (target_arch or signing_identity):
         raise ValueError("--target-arch와 --signing-identity는 macOS에서 사용하세요.")
     if importlib.util.find_spec("PyInstaller") is None:
         raise ValueError("빌드용 Python 환경에 requirements-build.txt의 PyInstaller를 설치하세요.")
+    if is_windows and importlib.util.find_spec("webview") is None:
+        raise ValueError("Windows 빌드용 Python 환경에 requirements-windows.txt를 설치하세요.")
     if not (SOURCE / "mapper.html").is_file():
         raise ValueError("빌드할 키 매퍼 화면 mapper.html이 필요합니다.")
     architecture = target_arch or platform.machine()
-    release = f"{APP_NAME}-{'macOS' if is_mac else 'Linux'}-{architecture}"
-    bundle_name = f"{APP_NAME}.app" if is_mac else release
-    archive_name = release + (".zip" if is_mac else "-portable.tar.gz")
+    if is_windows and architecture.casefold() == "amd64":
+        architecture = "x86_64"
+    release = f"{APP_NAME}-{'macOS' if is_mac else system}-{architecture}"
+    application_name = APP_NAME + (".app" if is_mac else ".exe" if is_windows else "")
+    bundle_name = application_name if is_mac else release + (".exe" if is_windows else "")
+    archive_name = release + {"Darwin": ".zip", "Linux": "-portable.tar.gz",
+                              "Windows": "-portable.zip"}[system]
     targets = [output / bundle_name]
     if archive:
         targets.append(output / archive_name)
@@ -137,9 +165,9 @@ def build(output: Path, *, archive: bool = False, target_arch: str | None = None
     with tempfile.TemporaryDirectory(prefix=".ch75k-build-", dir=output) as temporary:
         stage = Path(temporary).resolve()
         documents = release_documents()
-        subprocess.run(build_args(stage, is_mac, target_arch, signing_identity, documents),
+        subprocess.run(build_args(stage, system, target_arch, signing_identity, documents),
                        cwd=SOURCE, check=True)
-        source = stage / "dist" / (f"{APP_NAME}.app" if is_mac else APP_NAME)
+        source = stage / "dist" / application_name
         executable = source / "Contents" / "MacOS" / APP_NAME if is_mac else source
         if not executable.is_file():
             raise OSError(f"빌드된 실행 파일을 찾지 못했습니다. {executable}")
@@ -152,6 +180,11 @@ def build(output: Path, *, archive: bool = False, target_arch: str | None = None
             if is_mac:
                 subprocess.run(["/usr/bin/ditto", "-c", "-k", "--sequesterRsrc", "--keepParent",
                                 str(source), str(bundle_archive)], check=True)
+            elif is_windows:
+                with ZipFile(bundle_archive, "w", compression=ZIP_DEFLATED) as package:
+                    for path, relative in documents + windows_binding_notices():
+                        package.write(path, arcname=f"{release}/{relative.as_posix()}")
+                    package.write(executable, arcname=f"{release}/{application_name}")
             else:
                 contents = stage / "archive"
                 linux_rule = Path("70-ch75k-native.rules")
@@ -174,7 +207,7 @@ def main() -> int:
     parser.add_argument("--output", type=Path, default=Path("dist"),
                         help="출력 폴더, 기본값 dist")
     parser.add_argument("--archive", action="store_true",
-                        help="공유용 ZIP(macOS) 또는 tar.gz(Linux)도 생성")
+                        help="공유용 ZIP(macOS, Windows) 또는 tar.gz(Linux)도 생성")
     parser.add_argument("--target-arch", choices=MAC_ARCHITECTURES,
                         help="macOS 아키텍처. 생략하면 실행 중인 Python을 따릅니다.")
     parser.add_argument("--signing-identity",

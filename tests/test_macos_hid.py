@@ -1,9 +1,13 @@
 import ctypes
 from dataclasses import replace
 from pathlib import Path
+import sys
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
+
+if sys.platform == "win32":
+    raise unittest.SkipTest("The IOKit adapter uses POSIX file locks.")
 
 from hid_common import COMPANION_PAGE, CONFIG_PAGE, HidrawError
 import macos_hid
