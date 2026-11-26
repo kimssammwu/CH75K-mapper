@@ -6,7 +6,7 @@
 
 [GitHub Releases](https://github.com/kimssammwu/CH75K-mapper/releases)에서 운영체제에 맞는 파일과 `SHA256SUMS`를 내려받습니다. 버전 태그를 올리면 GitHub Actions가 모든 패키지의 실행 테스트를 거친 뒤 릴리스를 게시합니다.
 
-직접 빌드하려면 **Actions → Build CH75K → Run workflow**에서 실행하고, 완료된 실행의 **Artifacts**에서 내려받습니다. [GitHub 워크플로 수동 실행 안내](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow)
+`main`에 올린 변경은 같은 빌드 검사로 확인합니다. 직접 빌드하려면 **Actions → Build CH75K → Run workflow**에서 실행하고, 완료된 실행의 **Artifacts**에서 내려받습니다. [GitHub 워크플로 수동 실행 안내](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow)
 
 | 대상 | 다운로드 파일 |
 | --- | --- |
